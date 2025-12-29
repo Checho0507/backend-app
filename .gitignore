@@ -1,0 +1,25 @@
+#pycache
+__pycache__/
+app/__pycache__/
+tests/__pycache__/
+app/migrations/__pycache__/
+app/api/__pycache__/
+app/services/__pycache__/
+app/models/__pycache__/
+app/core/__pycache__/
+app/db/__pycache__/
+app/utils/__pycache__/
+#Virtual environment
+.venv/
+
+#Python files
+*.py[cod]
+*$py.class
+
+#Env files
+.env
+*.env   
+.env.*
+# Database
+*.sqlite3
+*.db
