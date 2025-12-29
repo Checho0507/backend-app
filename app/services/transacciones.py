@@ -339,7 +339,7 @@ async def obtener_detalle_deposito(
 # ENDPOINTS PARA RETIROS
 # ========================
 
-@router.post("/transacciones/retiro")
+@router.post("/retiro")
 async def realizar_retiro(
     monto: float = Body(...),
     metodo_retiro: str = Body(...),
