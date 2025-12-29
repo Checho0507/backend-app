@@ -249,6 +249,7 @@ def participar_sorteo_vip(
         costo=costo_vip,
         fichas=fichas,
         fecha_participacion=datetime.utcnow(),
+        sorteo_id=1,
         es_activo=True
     )
     
