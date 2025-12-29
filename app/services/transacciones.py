@@ -397,7 +397,8 @@ async def realizar_retiro(
             total=total if total else monto,
             referencia=referencia,
             estado="PENDIENTE",
-            fecha_solicitud=datetime.now()
+            fecha_solicitud=datetime.now(),
+            fecha_procesamiento=datetime.now()
         )
         
         db.add(nuevo_retiro)
