@@ -231,7 +231,8 @@ async def realizar_deposito(
             referencia=referencia,
             estado="PENDIENTE",
             comprobante_url=comprobante_url,
-            fecha_solicitud=datetime.now()
+            fecha_solicitud=datetime.now(),
+            fecha_procesamiento=None
         )
         
         db.add(nuevo_deposito)
