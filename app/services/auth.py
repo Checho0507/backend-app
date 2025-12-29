@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy import Integer
 from sqlalchemy.orm import Session
 from typing import List
 import random
@@ -32,7 +33,7 @@ def registrar_usuario(user: UsuarioCreate, db: Session = Depends(get_db)):
         username=user.username,
         email=user.email,
         password_hash=hash_password(user.password),
-        referido_por=user.referido_por,
+        referido_por=Integer(user.referido_por) if user.referido_por else None,
         saldo=1000 if user.referido_por else 0  # Bonus por referido
     )
 
