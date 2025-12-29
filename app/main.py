@@ -148,8 +148,7 @@ if not allowed_origins or allowed_origins == [""]:
         "http://localhost:5173",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
-        "https://*.railway.app",  # Permite cualquier subdominio de Railway
-        "https://*.vercel.app",   # Por si usas Vercel para el frontend
+        "https://betref.up.railway.app"
     ]
 
 print(f"🌍 Orígenes CORS permitidos: {allowed_origins}")
