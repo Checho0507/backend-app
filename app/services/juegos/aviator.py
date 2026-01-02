@@ -26,7 +26,7 @@ router = APIRouter()
 
 APUESTAS_PERMITIDAS = [100, 500, 1000, 2000, 5000]
 MIN_MULTIPLICADOR = 1.0
-MAX_MULTIPLICADOR = 100.0
+MAX_MULTIPLICADOR = 500.0
 PROBABILIDAD_EXPLOSION_BAJA = 0.30# 30% de explotar antes de 1.5x
 MAX_HORAS_SESION = 1
 
@@ -93,7 +93,7 @@ def calcular_multiplicador_actual(tiempo_transcurrido: decimal.Decimal, multipli
     
     # Curva suave: e^(t) - 1, normalizada para terminar en multiplicador_crash
     # Ajustamos para que comience más lento y acelere
-    if t < 0.3:
+    if t < 1:
         # Más lento al inicio
         progreso = (t / 0.3) ** 1.5
     else:
