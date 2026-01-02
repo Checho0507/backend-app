@@ -86,7 +86,7 @@ def calcular_multiplicador_actual(tiempo_transcurrido: decimal.Decimal, multipli
     """
     # Tiempo total estimado para llegar al crash (en segundos)
     # Ajustamos según el multiplicador_crash
-    tiempo_total = 2.0 + (multiplicador_crash * 0.1)  # Más alto = más tiempo
+    tiempo_total = (multiplicador_crash * 0.1)  # Más alto = más tiempo
     
     # Normalizamos el tiempo
     t = min(tiempo_transcurrido / tiempo_total, 1.0)
