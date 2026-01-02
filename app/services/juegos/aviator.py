@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import decimal
 import random
 import uuid
 import math
@@ -35,12 +36,12 @@ MAX_HORAS_SESION = 1
 
 class SesionAviator(TypedDict):
     user_id: int
-    apuesta: float
-    multiplicador_crash: float  # Multiplicador en el que explotó/explotará
-    multiplicador_retiro: Optional[float]  # Multiplicador en el que el usuario retiró
+    apuesta: decimal.Decimal
+    multiplicador_crash: decimal.Decimal  # Multiplicador en el que explotó/explotará
+    multiplicador_retiro: Optional[decimal.Decimal]  # Multiplicador en el que el usuario retiró
     retiro_manual: bool
     estado: str  # 'vuelo' | 'cashout' | 'explosion'
-    multiplicador_actual: float
+    multiplicador_actual: decimal.Decimal
     created_at: datetime
     tiempo_inicio: datetime
     tiempo_explosion: Optional[datetime]
@@ -50,7 +51,7 @@ class SesionAviator(TypedDict):
 # Utilidades de juego
 # ----------------------------------------------------------------------
 
-def generar_multiplicador_crash() -> float:
+def generar_multiplicador_crash() -> decimal.Decimal:
     """
     Genera un multiplicador de crash usando distribución sesgada.
     Mayor probabilidad de números bajos, menor probabilidad de números altos.
@@ -78,7 +79,7 @@ def generar_multiplicador_crash() -> float:
         return random.uniform(30.0, 100.0)
 
 
-def calcular_multiplicador_actual(tiempo_transcurrido: float, multiplicador_crash: float) -> float:
+def calcular_multiplicador_actual(tiempo_transcurrido: decimal.Decimal, multiplicador_crash: decimal.Decimal) -> decimal.Decimal:
     """
     Calcula el multiplicador actual basado en el tiempo transcurrido.
     Curva exponencial que crece rápidamente al inicio y luego se ralentiza.
@@ -169,7 +170,7 @@ def obtener_historial(
 
 @router.post("/juegos/aviator/iniciar")
 def iniciar_vuelo(
-    apuesta: float = Query(
+    apuesta: decimal.Decimal = Query(
         ...,
         description="Monto de la apuesta",
         ge=1,
@@ -244,7 +245,7 @@ def iniciar_vuelo(
 @router.post("/juegos/aviator/{session_id}/cashout")
 def hacer_cashout(
     session_id: str,
-    multiplicador_actual: float = Query(
+    multiplicador_actual: decimal.Decimal = Query(
         ...,
         description="Multiplicador actual en el momento del cashout (validación frontend)",
         ge=1.0,
@@ -372,7 +373,7 @@ def verificar_estado(
 @router.post("/juegos/aviator/{session_id}/configurar-autoretiro")
 def configurar_autoretiro(
     session_id: str,
-    multiplicador_auto: float = Query(
+    multiplicador_auto: decimal.Decimal = Query(
         ...,
         description="Multiplicador para retiro automático",
         ge=1.1,
