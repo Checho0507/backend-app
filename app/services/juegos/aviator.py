@@ -27,7 +27,7 @@ router = APIRouter()
 APUESTAS_PERMITIDAS = [100, 500, 1000, 2000, 5000]
 MIN_MULTIPLICADOR = 1.0
 MAX_MULTIPLICADOR = 100.0
-PROBABILIDAD_EXPLOSION_BAJA = 0.15  # 15% de explotar antes de 1.5x
+PROBABILIDAD_EXPLOSION_BAJA = 0.30# 30% de explotar antes de 1.5x
 MAX_HORAS_SESION = 1
 
 # ----------------------------------------------------------------------
