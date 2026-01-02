@@ -27,7 +27,7 @@ sorteo_en_proceso = False  # Variable para prevenir ejecuciones simultáneas
 def calcular_proximo_sorteo():
     """Calcula el próximo sorteo: todos los días a las 9:05 PM hora Colombia"""
     now_local = datetime.now(ZONE)
-    hoy_905 = now_local.replace(hour=12, minute=15, second=0, microsecond=0)
+    hoy_905 = now_local.replace(hour=12, minute=25, second=0, microsecond=0)
     return hoy_905 if now_local < hoy_905 else hoy_905 + timedelta(days=1)
 
 
