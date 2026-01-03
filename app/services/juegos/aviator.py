@@ -18,7 +18,7 @@ from ...api.auth import get_current_user
 router = APIRouter()
 
 # ----------------------------------------------------------------------
-# Configuración de Aviator
+# Configuración de Aviator - CORREGIDA
 # ----------------------------------------------------------------------
 
 APUESTAS_PERMITIDAS = [Decimal(str(x)) for x in [100, 500, 1000, 2000, 5000]]
@@ -61,7 +61,7 @@ class SesionAviator(TypedDict):
 
 
 # ----------------------------------------------------------------------
-# Utilidades de juego
+# Utilidades de juego - CORREGIDAS
 # ----------------------------------------------------------------------
 
 def calcular_duracion_animacion(multiplicador: Decimal) -> Decimal:
@@ -75,27 +75,27 @@ def calcular_duracion_animacion(multiplicador: Decimal) -> Decimal:
     # Para multiplicadores entre 1.0 y 1.5: muy rápido (0.5s a 1.5s)
     if multiplicador <= Decimal('1.5'):
         duracion = Decimal('0.5') + (multiplicador - Decimal('1.0')) * Decimal('2.0')
-        return duracion.quantize(Decimal('0.1'))
+        return max(Decimal('0.5'), min(duracion.quantize(Decimal('0.1')), Decimal('30.0')))
     
     # Para multiplicadores entre 1.5 y 2.0: rápido (1.5s a 2.5s)
     if multiplicador <= Decimal('2.0'):
         duracion = Decimal('1.5') + (multiplicador - Decimal('1.5')) * Decimal('2.0')
-        return duracion.quantize(Decimal('0.1'))
+        return max(Decimal('0.5'), min(duracion.quantize(Decimal('0.1')), Decimal('30.0')))
     
     # Para multiplicadores entre 2.0 y 10.0: medio (2.5s a 8s)
     if multiplicador <= Decimal('10.0'):
         duracion = Decimal('2.5') + (multiplicador - Decimal('2.0')) * Decimal('0.69')
-        return duracion.quantize(Decimal('0.1'))
+        return max(Decimal('0.5'), min(duracion.quantize(Decimal('0.1')), Decimal('30.0')))
     
     # Para multiplicadores entre 10.0 y 100.0: lento (8s a 20s)
     if multiplicador <= Decimal('100.0'):
         duracion = Decimal('8.0') + (multiplicador - Decimal('10.0')) * Decimal('0.133')
-        return duracion.quantize(Decimal('0.1'))
+        return max(Decimal('0.5'), min(duracion.quantize(Decimal('0.1')), Decimal('30.0')))
     
     # Para multiplicadores entre 100.0 y 500.0: muy lento (20s a 30s)
     if multiplicador <= Decimal('500.0'):
         duracion = Decimal('20.0') + (multiplicador - Decimal('100.0')) * Decimal('0.025')
-        return min(duracion, Decimal('30.0')).quantize(Decimal('0.1'))
+        return max(Decimal('0.5'), min(duracion, Decimal('30.0'))).quantize(Decimal('0.1'))
     
     return Decimal('30.0')
 
@@ -128,14 +128,16 @@ def generar_multiplicador_crash() -> Decimal:
                 return min_val
             
             resultado = min_val + (max_val - min_val) * Decimal(str(factor))
+            # Asegurar que el resultado esté dentro de límites razonables
+            resultado = max(MIN_MULTIPLICADOR, min(resultado, MAX_MULTIPLICADOR))
             return resultado.quantize(Decimal('0.01'))
     
-    # Fallback
+    # Fallback seguro
     return Decimal('1.50')
 
 
 def calcular_multiplicador_actual(
-    tiempo_transcurrido: float, 
+    tiempo_transcurrido: float,
     multiplicador_crash: Decimal,
     duracion_total: float
 ) -> Decimal:
@@ -156,6 +158,9 @@ def calcular_multiplicador_actual(
     # Calcular multiplicador: de 1.0 al multiplicador_crash
     rango = multiplicador_crash - Decimal('1.0')
     multiplicador = Decimal('1.0') + rango * Decimal(str(progreso_eased))
+    
+    # Asegurar que el multiplicador esté dentro de límites
+    multiplicador = max(Decimal('1.0'), min(multiplicador, multiplicador_crash))
     
     return multiplicador.quantize(Decimal('0.01'))
 
@@ -180,7 +185,6 @@ def obtener_sesion_asegurada(session_id: str, user_id: int) -> SesionAviator:
     if sesion["user_id"] != user_id:
         raise HTTPException(status_code=403, detail="No tienes acceso a esta sesión")
     return sesion
-
 
 # ----------------------------------------------------------------------
 # Endpoints utilitarios
@@ -227,9 +231,8 @@ def obtener_historial(
     
     return {"historial": historial}
 
-
 # ----------------------------------------------------------------------
-# Iniciar vuelo
+# Iniciar vuelo - CORREGIDO
 # ----------------------------------------------------------------------
 
 @router.post("/juegos/aviator/iniciar")
@@ -264,6 +267,13 @@ def iniciar_vuelo(
     # Calcular duración total de la animación
     duracion_total = float(calcular_duracion_animacion(multiplicador_crash))
     
+    # Validar valores para evitar datos corruptos
+    if not isinstance(multiplicador_crash, Decimal) or multiplicador_crash <= Decimal('0'):
+        multiplicador_crash = Decimal('2.0')
+    
+    if not isinstance(duracion_total, (int, float)) or duracion_total <= 0:
+        duracion_total = 5.0
+    
     # Crear sesión
     session_id = str(uuid.uuid4())
     ahora = datetime.now()
@@ -278,7 +288,7 @@ def iniciar_vuelo(
         "multiplicador_actual": Decimal('1.0'),
         "auto_retiro_activo": False,
         "multiplicador_auto": Decimal('2.0'),
-        "duracion_total": duracion_total,
+        "duracion_total": float(duracion_total),
         "created_at": ahora,
         "tiempo_inicio": ahora,
         "tiempo_explosion": None,
@@ -295,13 +305,13 @@ def iniciar_vuelo(
         "multiplicador_inicial": 1.0,
         "nuevo_saldo": float(user.saldo),
         "tiempo_inicio": ahora.isoformat(),
-        "duracion_total": duracion_total,
-        "multiplicador_crash": float(multiplicador_crash),  # Enviar al frontend
+        "duracion_total": float(duracion_total),
+        "multiplicador_crash": float(multiplicador_crash),
     }
 
 
 # ----------------------------------------------------------------------
-# Retirar (Cashout)
+# Retirar (Cashout) - CORREGIDO
 # ----------------------------------------------------------------------
 
 @router.post("/juegos/aviator/{session_id}/cashout")
@@ -328,6 +338,10 @@ def hacer_cashout(
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
+    # Validar multiplicador_actual
+    if not isinstance(multiplicador_actual, Decimal):
+        multiplicador_actual = Decimal('1.0')
+    
     # Verificar si ya pasó el crash point (con pequeño margen de tolerancia)
     margen = Decimal('0.05')
     if multiplicador_actual > sesion["multiplicador_crash"] + margen:
@@ -349,6 +363,11 @@ def hacer_cashout(
     # Calcular ganancia con el multiplicador actual
     # Limitar al multiplicador de crash si está muy cerca
     multiplicador_final = min(multiplicador_actual, sesion["multiplicador_crash"])
+    
+    # Validar multiplicador_final
+    if multiplicador_final < Decimal('1.0'):
+        multiplicador_final = Decimal('1.0')
+    
     ganancia = sesion["apuesta"] * multiplicador_final
     
     # Actualizar sesión
@@ -364,7 +383,7 @@ def hacer_cashout(
     db.refresh(user)
 
     return {
-        "resultado": f"¡Retiro exitoso! Ganaste ${ganancia:.2f}",
+        "resultado": f"¡Retiro exitoso! Ganaste ${float(ganancia):.2f}",
         "ganancia": float(ganancia),
         "multiplicador_crash": float(sesion["multiplicador_crash"]),
         "multiplicador_retiro": float(multiplicador_final),
@@ -374,7 +393,7 @@ def hacer_cashout(
 
 
 # ----------------------------------------------------------------------
-# Verificar estado del vuelo
+# Verificar estado del vuelo - CORREGIDO
 # ----------------------------------------------------------------------
 
 @router.get("/juegos/aviator/{session_id}/estado")
@@ -390,6 +409,10 @@ def verificar_estado(
     
     tiempo_transcurrido = (datetime.now() - sesion["tiempo_inicio"]).total_seconds()
     duracion_total = sesion.get("duracion_total", 30.0)
+    
+    # Validar duración total
+    if duracion_total <= 0:
+        duracion_total = 30.0
     
     multiplicador_actual = calcular_multiplicador_actual(
         tiempo_transcurrido, 
@@ -455,7 +478,7 @@ def verificar_estado(
 
 
 # ----------------------------------------------------------------------
-# Configurar Auto-retiro
+# Configurar Auto-retiro - CORREGIDO
 # ----------------------------------------------------------------------
 
 @router.post("/juegos/aviator/{session_id}/configurar-autoretiro")
@@ -476,6 +499,12 @@ def configurar_autoretiro(
     
     if sesion["estado"] != "vuelo":
         raise HTTPException(status_code=400, detail="Este vuelo ya terminó")
+    
+    # Validar multiplicador_auto
+    if multiplicador_auto < Decimal('1.1'):
+        multiplicador_auto = Decimal('1.1')
+    elif multiplicador_auto > Decimal('500.0'):
+        multiplicador_auto = Decimal('500.0')
     
     sesion["auto_retiro_activo"] = activar
     sesion["multiplicador_auto"] = multiplicador_auto
