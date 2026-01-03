@@ -4,16 +4,13 @@ from datetime import datetime, timedelta
 import decimal
 import random
 import uuid
-import math
 from typing import Dict, List, TypedDict, Optional
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-# Importa el almacén de sesiones COMPARTIDO
 from ...api.juegos import game_sessions
-
-# Dependencias del proyecto
 from ...models import usuario
 from ...database import get_db
 from ...api.auth import get_current_user
@@ -24,24 +21,39 @@ router = APIRouter()
 # Configuración de Aviator
 # ----------------------------------------------------------------------
 
-APUESTAS_PERMITIDAS = [100, 500, 1000, 2000, 5000]
-MIN_MULTIPLICADOR = 1.0
-MAX_MULTIPLICADOR = 500.0
-PROBABILIDAD_EXPLOSION_BAJA = 0.30# 30% de explotar antes de 1.5x
+APUESTAS_PERMITIDAS = [Decimal(str(x)) for x in [100, 500, 1000, 2000, 5000]]
+MIN_MULTIPLICADOR = Decimal('1.0')
+MAX_MULTIPLICADOR = Decimal('500.0')
 MAX_HORAS_SESION = 1
 
+# Probabilidades configuradas
+PROBABILIDADES = [
+    (Decimal('1.0'), Decimal('30.0')),       # 30% - 1x (crash inmediato)
+    (Decimal('1.5'), Decimal('30.0')),       # 30% - hasta 1.5x
+    (Decimal('10.0'), Decimal('20.0')),      # 20% - hasta 10x
+    (Decimal('50.0'), Decimal('10.0')),      # 10% - hasta 50x
+    (Decimal('100.0'), Decimal('5.0')),      # 5% - hasta 100x
+    (Decimal('200.0'), Decimal('3.0')),      # 3% - hasta 200x
+    (Decimal('250.0'), Decimal('1.0')),      # 1% - hasta 250x
+    (Decimal('300.0'), Decimal('0.5')),      # 0.5% - hasta 300x
+    (Decimal('400.0'), Decimal('0.4')),      # 0.4% - hasta 400x
+    (Decimal('500.0'), Decimal('0.1')),      # 0.1% - hasta 500x
+]
+
 # ----------------------------------------------------------------------
-# Modelos in-memory (sesión de Aviator)
+# Modelos in-memory
 # ----------------------------------------------------------------------
 
 class SesionAviator(TypedDict):
     user_id: int
-    apuesta: decimal.Decimal
-    multiplicador_crash: decimal.Decimal  # Multiplicador en el que explotó/explotará
-    multiplicador_retiro: Optional[decimal.Decimal]  # Multiplicador en el que el usuario retiró
+    apuesta: Decimal
+    multiplicador_crash: Decimal
+    multiplicador_retiro: Optional[Decimal]
     retiro_manual: bool
-    estado: str  # 'vuelo' | 'cashout' | 'explosion'
-    multiplicador_actual: decimal.Decimal
+    estado: str
+    multiplicador_actual: Decimal
+    auto_retiro_activo: bool
+    multiplicador_auto: Decimal
     created_at: datetime
     tiempo_inicio: datetime
     tiempo_explosion: Optional[datetime]
@@ -51,63 +63,95 @@ class SesionAviator(TypedDict):
 # Utilidades de juego
 # ----------------------------------------------------------------------
 
-def generar_multiplicador_crash() -> decimal.Decimal:
-    """
-    Genera un multiplicador de crash usando distribución sesgada.
-    Mayor probabilidad de números bajos, menor probabilidad de números altos.
-    """
-    # Usamos una distribución exponencial para que los crashes bajos sean más probables
-    r = random.random()
+def calcular_duracion_animacion(multiplicador: Decimal) -> Decimal:
+    """Calcula la duración de la animación en segundos basado en el multiplicador."""
+    if multiplicador <= Decimal('1.0'):
+        return Decimal('0.5')
     
-    # 15% de probabilidad de crash entre 1.0 y 1.5
-    if r < PROBABILIDAD_EXPLOSION_BAJA:
-        return random.uniform(1.0, 1.5)
+    # Para multiplicadores entre 1.0 y 1.5: aumento lineal de 0.1s por 0.1x
+    if multiplicador <= Decimal('1.5'):
+        base = Decimal('0.5')
+        incremento = (multiplicador - Decimal('1.0')) * Decimal('1.0')
+        return base + incremento
     
-    # 85% restante: distribución que favorece números bajos pero permite altos
-    # Función que da más peso a valores bajos
-    u = random.random()
+    # Para multiplicadores entre 1.5 y 500.0
+    # Usamos interpolación lineal desde 1.0s en 1.5x hasta 60s en 500x
+    # Pendiente = (60 - 1.0) / (500 - 1.5) = 59 / 498.5 ≈ 0.1184
+    if multiplicador <= Decimal('500.0'):
+        base_duracion = Decimal('1.0')
+        pendiente = (Decimal('60.0') - Decimal('1.0')) / (Decimal('500.0') - Decimal('1.5'))
+        duracion = base_duracion + (multiplicador - Decimal('1.5')) * pendiente
+        return max(duracion, Decimal('1.0')).quantize(Decimal('0.1'))
     
-    # Transformación para obtener valores entre 1.5 y 100
-    # Usamos una función exponencial inversa para hacer raros los valores altos
-    if u < 0.7:  # 70% de crashes entre 1.5 y 3.0
-        return random.uniform(1.5, 3.0)
-    elif u < 0.9:  # 20% entre 3.0 y 10.0
-        return random.uniform(3.0, 10.0)
-    elif u < 0.98:  # 8% entre 10.0 y 30.0
-        return random.uniform(10.0, 30.0)
-    else:  # 2% entre 30.0 y 100.0
-        return random.uniform(30.0, 100.0)
+    return Decimal('60.0')
 
 
-def calcular_multiplicador_actual(tiempo_transcurrido: decimal.Decimal, multiplicador_crash: decimal.Decimal) -> decimal.Decimal:
+def generar_multiplicador_crash() -> Decimal:
+    """
+    Genera un multiplicador de crash según las probabilidades especificadas.
+    """
+    r = random.random() * 100  # Porcentaje de 0 a 100
+    
+    acumulado = Decimal('0.0')
+    for i, (multiplier, prob) in enumerate(PROBABILIDADES):
+        acumulado += prob
+        
+        if r < float(acumulado):
+            # Estamos en este rango
+            if i == 0:
+                # Crash inmediato en 1x
+                return Decimal('1.0')
+            
+            min_val = PROBABILIDADES[i-1][0] if i > 0 else Decimal('1.0')
+            max_val = multiplier
+            
+            # Generar valor aleatorio dentro del rango
+            # Para hacerlo más realista, usamos distribución exponencial inversa
+            # (más probable cerca del mínimo del rango)
+            u = random.random()
+            # Transformación para hacer más probables los valores bajos dentro del rango
+            factor = u ** 2  # Cuadrado para sesgar hacia valores bajos
+            
+            if min_val == max_val:
+                return min_val
+            
+            resultado = min_val + (max_val - min_val) * Decimal(str(factor))
+            return resultado.quantize(Decimal('0.01'))
+    
+    # Fallback (no debería llegar aquí)
+    return Decimal(str(random.uniform(1.0, 500.0))).quantize(Decimal('0.01'))
+
+
+def calcular_multiplicador_actual(
+    tiempo_transcurrido: float, 
+    multiplicador_crash: Decimal,
+    duracion_total: float
+) -> Decimal:
     """
     Calcula el multiplicador actual basado en el tiempo transcurrido.
-    Curva exponencial que crece rápidamente al inicio y luego se ralentiza.
+    Curva suave que acelera al inicio y desacelera cerca del crash.
     """
-    # Tiempo total estimado para llegar al crash (en segundos)
-    # Ajustamos según el multiplicador_crash
-    tiempo_total = (multiplicador_crash * 0.1)  # Más alto = más tiempo
+    if duracion_total <= 0:
+        return Decimal('1.0')
     
-    # Normalizamos el tiempo
-    t = min(tiempo_transcurrido / tiempo_total, 1.0)
+    t = min(tiempo_transcurrido / duracion_total, 1.0)
     
-    # Curva suave: e^(t) - 1, normalizada para terminar en multiplicador_crash
-    # Ajustamos para que comience más lento y acelere
-    if t < 1:
-        # Más lento al inicio
-        progreso = (t / 0.3) ** 1.5
+    # Función de easing para curva más natural
+    # Usamos easeOutQuad para crecimiento rápido al inicio
+    if t < 0.7:
+        # Crecimiento acelerado al inicio (70% del tiempo)
+        progreso = 1 - (1 - t) ** 2
     else:
-        # Más rápido después
-        progreso = 0.3 ** 1.5 + ((t - 0.3) / 0.7) * (1 - 0.3 ** 1.5)
+        # Desaceleración al final (30% del tiempo)
+        base = 1 - (1 - 0.7) ** 2  # 0.91
+        progreso = base + ((t - 0.7) / 0.3) * (1 - base)
     
-    # Multiplicador actual
-    multiplicador = 1.0 + (multiplicador_crash - 1.0) * progreso
-    
-    return round(multiplicador, 2)
+    multiplicador = Decimal('1.0') + (multiplicador_crash - Decimal('1.0')) * Decimal(str(progreso))
+    return multiplicador.quantize(Decimal('0.01'))
 
 
 def limpiar_sesiones_expiradas() -> None:
-    """Elimina sesiones con más de MAX_HORAS_SESION de antigüedad."""
+    """Elimina sesiones expiradas."""
     now = datetime.now()
     expiradas = []
     for sid, sdata in list(game_sessions.items()):
@@ -122,7 +166,7 @@ def obtener_sesion_asegurada(session_id: str, user_id: int) -> SesionAviator:
     """Obtiene la sesión y valida existencia/propiedad."""
     if session_id not in game_sessions:
         raise HTTPException(status_code=404, detail="Sesión de juego no encontrada")
-    sesion: SesionAviator = game_sessions[session_id]  # type: ignore
+    sesion: SesionAviator = game_sessions[session_id]
     if sesion["user_id"] != user_id:
         raise HTTPException(status_code=403, detail="No tienes acceso a esta sesión")
     return sesion
@@ -135,30 +179,38 @@ def obtener_sesion_asegurada(session_id: str, user_id: int) -> SesionAviator:
 @router.get("/juegos/aviator/apuestas-permitidas")
 def leer_apuestas_permitidas():
     """Devuelve la lista de apuestas válidas para el front."""
-    return {"apuestas_permitidas": APUESTAS_PERMITIDAS}
+    return {"apuestas_permitidas": [float(ap) for ap in APUESTAS_PERMITIDAS]}
 
 
 @router.get("/juegos/aviator/historial")
 def obtener_historial(
-    limite: int = Query(10, description="Número de resultados a devolver", ge=1, le=50),
+    limite: int = Query(20, description="Número de resultados a devolver", ge=1, le=50),
     db: Session = Depends(get_db),
     current_user: usuario.Usuario = Depends(get_current_user),
 ):
-    """
-    Obtiene el historial de resultados recientes (público).
-    Esto muestra los crashes recientes para que los jugadores vean tendencias.
-    """
-    # En un sistema real, esto vendría de la base de datos
-    # Por ahora, generamos algunos datos de ejemplo
+    """Obtiene el historial de resultados recientes (público)."""
     historial = []
+    now = datetime.now()
+    
     for i in range(limite):
-        # Generar resultados realistas
         multiplicador = generar_multiplicador_crash()
+        timestamp = now - timedelta(seconds=i * random.randint(2, 10))
+        
+        # Determinar color basado en multiplicador
+        if multiplicador <= Decimal('1.5'):
+            color = 'red'
+        elif multiplicador <= Decimal('3.0'):
+            color = 'orange'
+        elif multiplicador <= Decimal('10.0'):
+            color = 'yellow'
+        else:
+            color = 'green'
+        
         historial.append({
             "id": i + 1,
-            "multiplicador": round(multiplicador, 2),
-            "timestamp": (datetime.now() - timedelta(minutes=i*2)).isoformat(),
-            "color": "green" if multiplicador > 3.0 else "orange" if multiplicador > 1.5 else "red"
+            "multiplicador": float(multiplicador),
+            "timestamp": timestamp.isoformat(),
+            "color": color
         })
     
     return {"historial": historial}
@@ -170,21 +222,15 @@ def obtener_historial(
 
 @router.post("/juegos/aviator/iniciar")
 def iniciar_vuelo(
-    apuesta: decimal.Decimal = Query(
+    apuesta: Decimal = Query(
         ...,
         description="Monto de la apuesta",
-        ge=1,
+        ge=Decimal('1.0'),
     ),
     db: Session = Depends(get_db),
     current_user: usuario.Usuario = Depends(get_current_user),
 ):
-    """
-    Inicia un nuevo vuelo:
-      - Valida apuesta y saldo
-      - Resta la apuesta al usuario
-      - Genera un multiplicador de crash aleatorio
-      - Inicia sesión de vuelo
-    """
+    """Inicia un nuevo vuelo."""
     limpiar_sesiones_expiradas()
 
     if apuesta not in APUESTAS_PERMITIDAS:
@@ -203,8 +249,8 @@ def iniciar_vuelo(
     # Generar multiplicador de crash
     multiplicador_crash = generar_multiplicador_crash()
     
-    # Calcular tiempo estimado de crash (en segundos)
-    tiempo_estimado_crash = 2.0 + (multiplicador_crash * 0.1)
+    # Calcular duración total de la animación
+    duracion_total = float(calcular_duracion_animacion(multiplicador_crash))
     
     # Crear sesión
     session_id = str(uuid.uuid4())
@@ -216,8 +262,11 @@ def iniciar_vuelo(
         "multiplicador_crash": multiplicador_crash,
         "multiplicador_retiro": None,
         "retiro_manual": False,
-        "estado": "vuelo",  # 'vuelo', 'cashout', 'explosion'
-        "multiplicador_actual": 1.0,
+        "estado": "vuelo",
+        "multiplicador_actual": Decimal('1.0'),
+        "auto_retiro_activo": False,
+        "multiplicador_auto": Decimal('2.0'),
+        "duracion_total": duracion_total,
         "created_at": ahora,
         "tiempo_inicio": ahora,
         "tiempo_explosion": None,
@@ -230,11 +279,11 @@ def iniciar_vuelo(
 
     return {
         "session_id": session_id,
-        "apuesta": apuesta,
+        "apuesta": float(apuesta),
         "multiplicador_inicial": 1.0,
-        "nuevo_saldo": user.saldo,
+        "nuevo_saldo": float(user.saldo),
         "tiempo_inicio": ahora.isoformat(),
-        "tiempo_estimado_crash": tiempo_estimado_crash,  # Solo para referencia, no exacto
+        "duracion_total": duracion_total,
     }
 
 
@@ -245,20 +294,16 @@ def iniciar_vuelo(
 @router.post("/juegos/aviator/{session_id}/cashout")
 def hacer_cashout(
     session_id: str,
-    multiplicador_actual: decimal.Decimal = Query(
+    multiplicador_actual: Decimal = Query(
         ...,
-        description="Multiplicador actual en el momento del cashout (validación frontend)",
-        ge=1.0,
+        description="Multiplicador actual en el momento del cashout",
+        ge=Decimal('1.0'),
+        le=Decimal('500.0'),
     ),
     db: Session = Depends(get_db),
     current_user: usuario.Usuario = Depends(get_current_user),
 ):
-    """
-    El jugador retira sus ganancias antes del crash:
-      - Valida que el vuelo esté activo
-      - Calcula ganancia: apuesta * multiplicador_actual
-      - Actualiza saldo
-    """
+    """El jugador retira sus ganancias antes del crash."""
     limpiar_sesiones_expiradas()
 
     sesion = obtener_sesion_asegurada(session_id, current_user.id)
@@ -270,23 +315,20 @@ def hacer_cashout(
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    # Validar que el multiplicador no haya superado el crash
-    tiempo_transcurrido = (datetime.now() - sesion["tiempo_inicio"]).total_seconds()
-    multiplicador_calculado = calcular_multiplicador_actual(tiempo_transcurrido, sesion["multiplicador_crash"])
-    
     # Verificar si ya pasó el crash point
-    if multiplicador_actual > sesion["multiplicador_crash"]:
+    if multiplicador_actual >= sesion["multiplicador_crash"]:
         # Ya explotó, el usuario perdió
         sesion["estado"] = "explosion"
         sesion["multiplicador_retiro"] = None
         sesion["retiro_manual"] = False
+        sesion["tiempo_explosion"] = datetime.now()
         
         return {
-            "resultado": "¡CRASH! El avión explotó antes de que pudieras retirar.",
-            "ganancia": 0,
-            "multiplicador_crash": sesion["multiplicador_crash"],
+            "resultado": f"¡CRASH! El avión explotó en {sesion['multiplicador_crash']}x",
+            "ganancia": 0.0,
+            "multiplicador_crash": float(sesion["multiplicador_crash"]),
             "multiplicador_retiro": None,
-            "nuevo_saldo": user.saldo,
+            "nuevo_saldo": float(user.saldo),
             "estado": "explosion"
         }
 
@@ -298,6 +340,7 @@ def hacer_cashout(
     sesion["multiplicador_retiro"] = multiplicador_actual
     sesion["retiro_manual"] = True
     sesion["multiplicador_actual"] = multiplicador_actual
+    sesion["tiempo_explosion"] = datetime.now()
     
     # Pagar al jugador
     user.saldo += ganancia
@@ -306,10 +349,10 @@ def hacer_cashout(
 
     return {
         "resultado": f"¡Retiro exitoso! Ganaste ${ganancia:.2f}",
-        "ganancia": ganancia,
-        "multiplicador_crash": sesion["multiplicador_crash"],
-        "multiplicador_retiro": multiplicador_actual,
-        "nuevo_saldo": user.saldo,
+        "ganancia": float(ganancia),
+        "multiplicador_crash": float(sesion["multiplicador_crash"]),
+        "multiplicador_retiro": float(multiplicador_actual),
+        "nuevo_saldo": float(user.saldo),
         "estado": "cashout"
     }
 
@@ -324,18 +367,19 @@ def verificar_estado(
     db: Session = Depends(get_db),
     current_user: usuario.Usuario = Depends(get_current_user),
 ):
-    """
-    Verifica el estado actual del vuelo:
-      - Devuelve el multiplicador actual
-      - Indica si ya explotó
-      - Para actualizaciones en tiempo real
-    """
+    """Verifica el estado actual del vuelo."""
     limpiar_sesiones_expiradas()
 
     sesion = obtener_sesion_asegurada(session_id, current_user.id)
     
     tiempo_transcurrido = (datetime.now() - sesion["tiempo_inicio"]).total_seconds()
-    multiplicador_actual = calcular_multiplicador_actual(tiempo_transcurrido, sesion["multiplicador_crash"])
+    duracion_total = sesion.get("duracion_total", 60.0)
+    
+    multiplicador_actual = calcular_multiplicador_actual(
+        tiempo_transcurrido, 
+        sesion["multiplicador_crash"],
+        duracion_total
+    )
     
     # Verificar si ya explotó
     exploto = multiplicador_actual >= sesion["multiplicador_crash"]
@@ -344,57 +388,85 @@ def verificar_estado(
         # Acaba de explotar
         sesion["estado"] = "explosion"
         sesion["tiempo_explosion"] = datetime.now()
-        
-        user = db.query(usuario.Usuario).filter(usuario.Usuario.id == current_user.id).first()
-        if user:
-            # El jugador pierde la apuesta (ya fue descontada al inicio)
-            # No hay que hacer nada más
-            pass
     
     # Actualizar multiplicador actual en sesión
     sesion["multiplicador_actual"] = multiplicador_actual
     
+    # Verificar retiro automático si está activo
+    if (sesion["estado"] == "vuelo" and 
+        sesion["auto_retiro_activo"] and 
+        multiplicador_actual >= sesion["multiplicador_auto"]):
+        
+        # Ejecutar retiro automático
+        user = db.query(usuario.Usuario).filter(usuario.Usuario.id == current_user.id).first()
+        if user:
+            ganancia = sesion["apuesta"] * sesion["multiplicador_auto"]
+            user.saldo += ganancia
+            db.commit()
+            db.refresh(user)
+            
+            sesion["estado"] = "cashout"
+            sesion["multiplicador_retiro"] = sesion["multiplicador_auto"]
+            sesion["retiro_manual"] = False
+            sesion["tiempo_explosion"] = datetime.now()
+            
+            return {
+                "session_id": session_id,
+                "estado": "cashout",
+                "multiplicador_actual": float(multiplicador_actual),
+                "multiplicador_crash": float(sesion["multiplicador_crash"]),
+                "multiplicador_retiro": float(sesion["multiplicador_auto"]),
+                "apuesta": float(sesion["apuesta"]),
+                "tiempo_transcurrido": tiempo_transcurrido,
+                "exploto": False,
+                "ganancia": float(ganancia),
+                "nuevo_saldo": float(user.saldo),
+                "auto_retiro": True,
+            }
+    
     return {
         "session_id": session_id,
         "estado": sesion["estado"],
-        "multiplicador_actual": multiplicador_actual,
-        "multiplicador_crash": sesion["multiplicador_crash"] if sesion["estado"] != "vuelo" else None,
-        "multiplicador_retiro": sesion["multiplicador_retiro"],
-        "apuesta": sesion["apuesta"],
+        "multiplicador_actual": float(multiplicador_actual),
+        "multiplicador_crash": float(sesion["multiplicador_crash"]) if sesion["estado"] != "vuelo" else None,
+        "multiplicador_retiro": float(sesion["multiplicador_retiro"]) if sesion["multiplicador_retiro"] else None,
+        "apuesta": float(sesion["apuesta"]),
         "tiempo_transcurrido": tiempo_transcurrido,
         "exploto": exploto,
+        "duracion_total": duracion_total,
     }
 
 
 # ----------------------------------------------------------------------
-# Auto-retiro (configuración de retiro automático)
+# Configurar Auto-retiro
 # ----------------------------------------------------------------------
 
 @router.post("/juegos/aviator/{session_id}/configurar-autoretiro")
 def configurar_autoretiro(
     session_id: str,
-    multiplicador_auto: decimal.Decimal = Query(
+    multiplicador_auto: Decimal = Query(
         ...,
         description="Multiplicador para retiro automático",
-        ge=1.1,
-        le=50.0,
+        ge=Decimal('1.1'),
+        le=Decimal('500.0'),
     ),
+    activar: bool = Query(True, description="Activar o desactivar auto-retiro"),
     db: Session = Depends(get_db),
     current_user: usuario.Usuario = Depends(get_current_user),
 ):
-    """
-    Configura retiro automático en un multiplicador específico.
-    """
+    """Configura retiro automático."""
     sesion = obtener_sesion_asegurada(session_id, current_user.id)
     
     if sesion["estado"] != "vuelo":
         raise HTTPException(status_code=400, detail="Este vuelo ya terminó")
     
-    # En una implementación real, guardarías esta configuración
-    # Por ahora, solo validamos
+    sesion["auto_retiro_activo"] = activar
+    sesion["multiplicador_auto"] = multiplicador_auto
+    
     return {
-        "mensaje": f"Retiro automático configurado en {multiplicador_auto}x",
-        "multiplicador_auto": multiplicador_auto
+        "mensaje": f"Retiro automático {'activado' if activar else 'desactivado'} en {multiplicador_auto}x",
+        "multiplicador_auto": float(multiplicador_auto),
+        "activado": activar
     }
 
 
@@ -407,18 +479,16 @@ def obtener_estadisticas(
     db: Session = Depends(get_db),
     current_user: usuario.Usuario = Depends(get_current_user),
 ):
-    """
-    Obtiene estadísticas del jugador en Aviator.
-    """
+    """Obtiene estadísticas del jugador en Aviator."""
     # En un sistema real, esto vendría de la base de datos
-    # Por ahora, retornamos datos de ejemplo
+    # Por simplicidad, retornamos datos de ejemplo
     return {
         "total_vuelos": 0,
         "vuelos_ganados": 0,
         "vuelos_perdidos": 0,
-        "ganancia_total": 0,
-        "perdida_total": 0,
-        "balance": 0,
-        "mayor_ganancia": 0,
-        "multiplicador_record": 0,
+        "ganancia_total": 0.0,
+        "perdida_total": 0.0,
+        "balance": 0.0,
+        "mayor_ganancia": 0.0,
+        "multiplicador_record": 0.0,
     }
