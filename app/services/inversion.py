@@ -76,7 +76,7 @@ def obtener_estado_inversion(
     current_user: Usuario = Depends(get_current_user)
 ):
     """Obtener estado actual de las inversiones del usuario"""
-    ahora = date.today()
+    ahora = datetime.today()
     
     # Obtener todas las inversiones activas del usuario
     inversiones = db.query(Inversion).filter(
