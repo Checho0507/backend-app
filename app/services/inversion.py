@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -76,7 +76,7 @@ def obtener_estado_inversion(
     current_user: Usuario = Depends(get_current_user)
 ):
     """Obtener estado actual de las inversiones del usuario"""
-    ahora = datetime.now(ZONE)
+    ahora = date.today()
     
     # Obtener todas las inversiones activas del usuario
     inversiones = db.query(Inversion).filter(
