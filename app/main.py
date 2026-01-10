@@ -26,6 +26,7 @@ from app.services.juegos.dados import router as dados_router
 from app.services.juegos.minas import router as minas_router
 from app.services.transacciones import router as transacciones_router
 from app.services.juegos.aviator import router as aviator_router
+from app.services.inversion import router as inversion_router
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -254,6 +255,9 @@ app.include_router(aviator_router, prefix="", tags=["Juegos"])
 
 # Rutas de transacciones
 app.include_router(transacciones_router, prefix="/transacciones", tags=["Transacciones"])
+# Rutas de inversiones
+app.include_router(inversion_router, prefix="/inversiones", tags=["Inversiones"])
+
 
 # ============================================================================
 # PUNTO DE ENTRADA PARA RAILWAY
