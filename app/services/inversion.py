@@ -39,7 +39,7 @@ def depositar_inversion(
         )
     
     # Calcular fechas de retiro
-    ahora = datetime.now(ZONE)
+    ahora = datetime.today()
     proximo_retiro_intereses = ahora
     proximo_retiro_capital = ahora + timedelta(days=180)
     
@@ -160,7 +160,7 @@ def retirar_intereses(
     if not inversion:
         raise HTTPException(status_code=404, detail="Inversión no encontrada")
     
-    ahora = datetime.now(ZONE)
+    ahora = datetime.today()
     
     # Verificar si puede retirar intereses
     if ahora < inversion.fecha_proximo_retiro_intereses:
@@ -233,7 +233,7 @@ def retirar_capital(
     if not inversion:
         raise HTTPException(status_code=404, detail="Inversión no encontrada")
     
-    ahora = datetime.now(ZONE)
+    ahora = datetime.today()
     
     # Verificar si puede retirar capital
     if ahora < inversion.fecha_proximo_retiro_capital:
