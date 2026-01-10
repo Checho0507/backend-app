@@ -21,7 +21,7 @@ def depositar_inversion(
     current_user: Usuario = Depends(get_current_user)
 ):
     """Realizar un depósito en la inversión"""
-    monto = float(data.get("monto", 0))
+    monto = Decimal(data.get("monto", 0))
     
     # Validar monto
     if monto < 50000 or monto > 5000000:
@@ -64,7 +64,7 @@ def depositar_inversion(
     return {
         "success": True,
         "message": f"✅ Inversión de ${monto:,.0f} realizada con éxito",
-        "nuevo_saldo": float(usuario.saldo),
+        "nuevo_saldo": Decimal(usuario.saldo),
         "inversion_id": nueva_inversion.id,
         "proximo_retiro_intereses": proximo_retiro_intereses.isoformat(),
         "proximo_retiro_capital": proximo_retiro_capital.isoformat()
@@ -119,10 +119,10 @@ def obtener_estado_inversion(
         
         detalles_inversiones.append({
             "id": inversion.id,
-            "monto": float(inversion.monto),
+            "monto": Decimal(inversion.monto),
             "fecha_deposito": inversion.fecha_deposito,
-            "interes_acumulado": float(interes_total),
-            "interes_diario": float(interes_diario),
+            "interes_acumulado": Decimal(interes_total),
+            "interes_diario": Decimal(interes_diario),
             "puede_retirar_intereses": puede_retirar_intereses,
             "puede_retirar_capital": puede_retirar_capital,
             "fecha_proximo_retiro_intereses": inversion.fecha_proximo_retiro_intereses,
@@ -133,9 +133,9 @@ def obtener_estado_inversion(
         })
     
     return {
-        "total_invertido": float(total_invertido),
-        "total_intereses": float(total_intereses),
-        "total_intereses_disponibles": float(total_intereses_disponibles),
+        "total_invertido": Decimal(total_invertido),
+        "total_intereses": Decimal(total_intereses),
+        "total_intereses_disponibles": Decimal(total_intereses_disponibles),
         "inversiones": detalles_inversiones,
         "timestamp": ahora.isoformat()
     }
@@ -208,8 +208,8 @@ def retirar_intereses(
     return {
         "success": True,
         "message": f"✅ Retiro de intereses por ${interes_acumulado:,.0f} realizado con éxito",
-        "monto_retirado": float(interes_acumulado),
-        "nuevo_saldo": float(usuario.saldo),
+        "monto_retirado": Decimal(interes_acumulado),
+        "nuevo_saldo": Decimal(usuario.saldo),
         "proximo_retiro_intereses": inversion.fecha_proximo_retiro_intereses.isoformat()
     }
 
@@ -281,10 +281,10 @@ def retirar_capital(
     return {
         "success": True,
         "message": f"✅ Retiro de capital por ${monto_total:,.0f} realizado con éxito",
-        "capital": float(inversion.monto),
-        "intereses_finales": float(interes_final),
-        "total_retirado": float(monto_total),
-        "nuevo_saldo": float(usuario.saldo)
+        "capital": Decimal(inversion.monto),
+        "intereses_finales": Decimal(interes_final),
+        "total_retirado": Decimal(monto_total),
+        "nuevo_saldo": Decimal(usuario.saldo)
     }
 
 @router.get("/inversion/historial")
@@ -306,14 +306,14 @@ def obtener_historial_inversion(
         
         inversion_data = {
             "id": inversion.id,
-            "monto": float(inversion.monto),
+            "monto": Decimal(inversion.monto),
             "fecha_deposito": inversion.fecha_deposito,
             "activa": inversion.activa,
-            "tasa_interes": float(inversion.tasa_interes),
+            "tasa_interes": Decimal(inversion.tasa_interes),
             "retiros": [
                 {
                     "tipo": retiro.tipo,
-                    "monto": float(retiro.monto),
+                    "monto": Decimal(retiro.monto),
                     "fecha": retiro.fecha,
                     "detalles": retiro.detalles
                 }
