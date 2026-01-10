@@ -30,10 +30,10 @@ MAX_HORAS_SESION = 1
 PROBABILIDADES = [
     (Decimal('1.0'), Decimal('50.0')),       # 25% - crash inmediato en 1.0x
     (Decimal('1.5'), Decimal('30.0')),       # 25% - hasta 1.5x
-    (Decimal('2.0'), Decimal('10.0')),       # 20% - hasta 2.0x
+    (Decimal('2.0'), Decimal('14.0')),       # 20% - hasta 2.0x
     (Decimal('5.0'), Decimal('5.0')),       # 15% - hasta 5.0x
-    (Decimal('10.0'), Decimal('4.0')),       # 8% - hasta 10x
-    (Decimal('50.0'), Decimal('0.9')),       # 4% - hasta 50x
+    (Decimal('10.0'), Decimal('0.5')),       # 8% - hasta 10x
+    (Decimal('50.0'), Decimal('0.4')),       # 4% - hasta 50x
     (Decimal('100.0'), Decimal('0.09')),      # 1% - hasta 100x
     (Decimal('200.0'), Decimal('0.007')),      # 0.07% - hasta 200x
     (Decimal('300.0'), Decimal('0.002')),      # 0.02% - hasta 300x
