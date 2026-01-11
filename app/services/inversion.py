@@ -182,7 +182,7 @@ def retirar_intereses(
     
     # Actualizar saldo del usuario
     usuario = db.query(Usuario).filter(Usuario.id == current_user.id).first()
-    usuario.saldo += interes_acumulado
+    usuario.saldo += Decimal(interes_acumulado)
     
     # Registrar retiro
     retiro = RetiroInversion(
