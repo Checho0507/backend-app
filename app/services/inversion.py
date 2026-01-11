@@ -266,7 +266,7 @@ def retirar_capital(
         detalles={
             "capital": inversion.monto,
             "intereses_finales": interes_final,
-            "total": Decimal(monto_total)
+            "total": monto_total
         }
     )
     
