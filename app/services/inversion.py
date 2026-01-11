@@ -38,8 +38,8 @@ def depositar_inversion(
             detail="Saldo insuficiente para realizar la inversión"
         )
     
-    # Calcular fechas de retiro
-    ahora = datetime.astimezone(datetime.now(), ZONE)
+    # Calcular fechas de retiro + 19 horas
+    ahora = datetime.today() + timedelta(hours=19)
     proximo_retiro_intereses = ahora + timedelta(days=30)
     proximo_retiro_capital = ahora + timedelta(days=180)
     
@@ -50,10 +50,9 @@ def depositar_inversion(
     nueva_inversion = Inversion(
         usuario_id=usuario.id,
         monto=monto,
-        #fecha + 19 horas para ajustar a zona horaria
-        fecha_deposito=ahora + timedelta(hours=19),
-        fecha_proximo_retiro_intereses=proximo_retiro_intereses + timedelta(hours=19),
-        fecha_proximo_retiro_capital=proximo_retiro_capital + timedelta(hours=19),
+        fecha_deposito=ahora,
+        fecha_proximo_retiro_intereses=proximo_retiro_intereses,
+        fecha_proximo_retiro_capital=proximo_retiro_capital,
         tasa_interes=300.0
     )
     
@@ -77,7 +76,7 @@ def obtener_estado_inversion(
     current_user: Usuario = Depends(get_current_user)
 ):
     """Obtener estado actual de las inversiones del usuario"""
-    ahora = datetime.today()
+    ahora = datetime.today() + timedelta(hours=19)
     
     # Obtener todas las inversiones activas del usuario
     inversiones = db.query(Inversion).filter(
@@ -161,7 +160,7 @@ def retirar_intereses(
     if not inversion:
         raise HTTPException(status_code=404, detail="Inversión no encontrada")
     
-    ahora = datetime.today()
+    ahora = datetime.today() + timedelta(hours=19)
     
     # Verificar si puede retirar intereses
     if ahora < inversion.fecha_proximo_retiro_intereses:
@@ -234,7 +233,7 @@ def retirar_capital(
     if not inversion:
         raise HTTPException(status_code=404, detail="Inversión no encontrada")
     
-    ahora = datetime.today()
+    ahora = datetime.today() + timedelta(hours=19)
     
     # Verificar si puede retirar capital
     if ahora < inversion.fecha_proximo_retiro_capital:
