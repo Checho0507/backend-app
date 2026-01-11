@@ -25,6 +25,9 @@ def registrar_usuario(user: UsuarioCreate, db: Session = Depends(get_db)):
     # Verificar si el username ya existe
     if db.query(usuario.Usuario).filter(usuario.Usuario.username == user.username).first():
         raise HTTPException(status_code=400, detail="El nombre de usuario ya está en uso")
+    
+    if not user.referido_por:
+        user.referido_por = 0
 
     # Crear nuevo usuario
     nuevo_usuario = usuario.Usuario(
