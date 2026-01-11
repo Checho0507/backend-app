@@ -41,7 +41,7 @@ def depositar_inversion(
     # Calcular fechas de retiro
     ahora = datetime.today()
     proximo_retiro_intereses = ahora + timedelta(days=30)
-    proximo_retiro_capital = ahora + timedelta(days=180)
+    proximo_retiro_capital = ahora
     
     # Descontar del saldo del usuario
     usuario.saldo -= monto
@@ -255,18 +255,18 @@ def retirar_capital(
     
     # Actualizar saldo del usuario
     usuario = db.query(Usuario).filter(Usuario.id == current_user.id).first()
-    usuario.saldo += monto_total
+    usuario.saldo += Decimal(monto_total)
     
     # Registrar retiro
     retiro = RetiroInversion(
         inversion_id=inversion.id,
         tipo="capital",
-        monto=monto_total,
+        monto=Decimal(monto_total),
         fecha=ahora,
         detalles={
             "capital": inversion.monto,
             "intereses_finales": interes_final,
-            "total": monto_total
+            "total": Decimal(monto_total)
         }
     )
     
