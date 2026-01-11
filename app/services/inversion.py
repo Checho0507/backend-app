@@ -93,17 +93,17 @@ def obtener_estado_inversion(
     detalles_inversiones = []
     
     for inversion in inversiones:
-        # Calcular días transcurridos
-        dias_transcurridos = (ahora - inversion.fecha_deposito).days
+        # Calcular segundos transcurridos
+        segundos_transcurridos = (ahora - inversion.fecha_deposito).seconds
         
-        # Calcular interés diario (300% anual = 300/365 ≈ 0.8219% diario)
-        tasa_diaria = inversion.tasa_interes / 36500  # Convertir a decimal diario
-        interes_diario = inversion.monto * tasa_diaria
+        # Calcular interés por segundo
+        tasa_segundo = inversion.tasa_interes / 36500 / 86400
+        interes_por_segundo = inversion.monto * tasa_segundo
         
         # Interés acumulado desde el inicio o último retiro
         fecha_inicio_calculo = inversion.fecha_ultimo_retiro_intereses or inversion.fecha_deposito
-        dias_desde_ultimo_retiro = (ahora - fecha_inicio_calculo).days
-        interes_acumulado_desde_retiro = interes_diario * dias_desde_ultimo_retiro
+        segundos_transcurridos = (ahora - fecha_inicio_calculo).seconds
+        interes_acumulado_desde_retiro = interes_por_segundo * segundos_transcurridos
         
         # Interés total acumulado
         interes_total = inversion.interes_acumulado + interes_acumulado_desde_retiro
@@ -122,12 +122,12 @@ def obtener_estado_inversion(
             "monto": Decimal(inversion.monto),
             "fecha_deposito": inversion.fecha_deposito,
             "interes_acumulado": Decimal(interes_total),
-            "interes_diario": Decimal(interes_diario),
+            "interes_diario": Decimal(interes_por_segundo * 86400),
             "puede_retirar_intereses": puede_retirar_intereses,
             "puede_retirar_capital": puede_retirar_capital,
             "fecha_proximo_retiro_intereses": inversion.fecha_proximo_retiro_intereses,
             "fecha_proximo_retiro_capital": inversion.fecha_proximo_retiro_capital,
-            "dias_transcurridos": dias_transcurridos,
+            "dias_transcurridos": (ahora - inversion.fecha_deposito).days,
             "dias_faltantes_intereses": max(0, (inversion.fecha_proximo_retiro_intereses - ahora).days) if not puede_retirar_intereses else 0,
             "dias_faltantes_capital": max(0, (inversion.fecha_proximo_retiro_capital - ahora).days) if not puede_retirar_capital else 0
         })
