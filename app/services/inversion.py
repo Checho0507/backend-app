@@ -192,7 +192,7 @@ def retirar_intereses(
         fecha=ahora,
         detalles={
             "interes_acumulado": interes_acumulado,
-            "dias_desde_ultimo_retiro": dias_desde_ultimo_retiro
+            "dias_desde_ultimo_retiro": (ahora - fecha_inicio_calculo).days
         }
     )
     
