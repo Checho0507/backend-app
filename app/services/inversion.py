@@ -175,7 +175,7 @@ def retirar_intereses(
     dias_desde_ultimo_retiro = (ahora - fecha_inicio_calculo).days
     tasa_diaria = inversion.tasa_interes / 36500
     interes_diario = inversion.monto * tasa_diaria
-    interes_acumulado = interes_diario * 2
+    interes_acumulado = interes_diario * dias_desde_ultimo_retiro
     
     if interes_acumulado <= 0:
         raise HTTPException(status_code=400, detail="No hay intereses acumulados para retirar")
