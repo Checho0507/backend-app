@@ -50,9 +50,10 @@ def depositar_inversion(
     nueva_inversion = Inversion(
         usuario_id=usuario.id,
         monto=monto,
-        fecha_deposito=ahora,
-        fecha_proximo_retiro_intereses=proximo_retiro_intereses,
-        fecha_proximo_retiro_capital=proximo_retiro_capital,
+        #fecha + 19 horas para ajustar a zona horaria
+        fecha_deposito=ahora + timedelta(hours=19),
+        fecha_proximo_retiro_intereses=proximo_retiro_intereses + timedelta(hours=19),
+        fecha_proximo_retiro_capital=proximo_retiro_capital + timedelta(hours=19),
         tasa_interes=300.0
     )
     
