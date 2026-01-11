@@ -39,7 +39,7 @@ def depositar_inversion(
         )
     
     # Calcular fechas de retiro
-    ahora = datetime.today()
+    ahora = datetime.today().astimezone(ZONE)
     proximo_retiro_intereses = ahora + timedelta(days=30)
     proximo_retiro_capital = ahora + timedelta(days=180)
     
