@@ -62,10 +62,20 @@ def jugar_carta_mayor(
 
     # Descontar apuesta
     user.saldo -= apuesta
+    valor_casa = 0
+    valor_usuario = 0
 
     # Generar cartas aleatorias
-    valor_usuario = random.randint(1, 13)
-    valor_casa = random.randint(1, 13)
+    filtro = random.randint(1,3)
+    if filtro == 1:
+        valor_usuario = random.randint(1, 7)
+        valor_casa = random.randint(1, 13)
+    elif filtro == 2:
+        valor_usuario = random.randint(1, 10)
+        valor_casa = random.randint(1, 13)
+    else:
+        valor_usuario = random.randint(1, 13)
+        valor_casa = random.randint(1, 13)
     
     # Elegir palos aleatorios (solo para visualización)
     palo_usuario = random.choice(PALOS)
