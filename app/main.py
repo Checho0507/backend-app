@@ -252,7 +252,7 @@ app.include_router(ruleta_router, prefix="/juegos/ruleta", tags=["Juegos"])
 app.include_router(tragamonedas_router, prefix="/juegos/tragamonedas", tags=["Juegos"])
 app.include_router(dados_router, prefix="/juegos/dados", tags=["Juegos"])
 app.include_router(minas_router, prefix="/juegos/minas", tags=["Juegos"])
-app.include_router(caraosello_router, prefix="" tags=["Juegos"])
+app.include_router(caraosello_router, prefix="", tags=["Juegos"])
 app.include_router(aviator_router, prefix="", tags=["Juegos"])
 
 # Rutas de transacciones
