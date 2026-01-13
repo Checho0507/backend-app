@@ -26,6 +26,7 @@ from app.services.juegos.dados import router as dados_router
 from app.services.juegos.minas import router as minas_router
 from app.services.transacciones import router as transacciones_router
 from app.services.juegos.aviator import router as aviator_router
+from app.services.juegos.caraosello import router as caraosello_router
 from app.services.inversion import router as inversion_router
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -251,6 +252,7 @@ app.include_router(ruleta_router, prefix="/juegos/ruleta", tags=["Juegos"])
 app.include_router(tragamonedas_router, prefix="/juegos/tragamonedas", tags=["Juegos"])
 app.include_router(dados_router, prefix="/juegos/dados", tags=["Juegos"])
 app.include_router(minas_router, prefix="/juegos/minas", tags=["Juegos"])
+app.include_router(caraosello_router, prefix="/juegos/caraosello", tags=["Juegos"])
 app.include_router(aviator_router, prefix="", tags=["Juegos"])
 
 # Rutas de transacciones
