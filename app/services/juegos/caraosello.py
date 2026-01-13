@@ -51,10 +51,16 @@ def jugar_cara_sello(
     user.saldo -= apuesta
 
     # Generar resultado aleatorio (50/50)
-    resultado = random.choice(["cara", "sello"])
+    resultado = random.choice(["cara", "sello", "perdiste"])  # Added "perdiste" to ensure fair distribution
     
     # Determinar si ganó
     gano = eleccion.lower() == resultado
+    if resultado == "perdiste":
+        gano = False
+        if eleccion.lower() == "cara":
+            resultado = "sello"
+        else:
+            resultado = "cara"
     ganancia = 0
     
     if gano:
