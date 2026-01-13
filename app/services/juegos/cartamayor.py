@@ -7,7 +7,7 @@ from ...models.usuario import Usuario
 
 router = APIRouter()
 
-APUESTA_MINIMA = 50
+APUESTA_MINIMA = 100
 VALORES_CARTAS = {
     1: ("As", "A"),
     2: ("2", "2"),
