@@ -98,7 +98,7 @@ def obtener_estado_inversion(
         
         # Calcular interés por segundo
         tasa_segundo = inversion.tasa_interes / 36500 / 86400
-        interes_por_segundo = inversion.monto * tasa_segundo
+        interes_por_segundo = inversion.monto * tasa_segundo * segundos_transcurridos
         
         # Interés acumulado desde el inicio o último retiro
         fecha_inicio_calculo = inversion.fecha_ultimo_retiro_intereses or inversion.fecha_deposito
