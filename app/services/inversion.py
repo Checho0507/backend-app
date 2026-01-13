@@ -93,12 +93,16 @@ def obtener_estado_inversion(
     detalles_inversiones = []
     
     for inversion in inversiones:
+        if inversion.fecha_ultimo_retiro_intereses:
+            fecha_base = inversion.fecha_ultimo_retiro_intereses
+        else:
+            fecha_base = inversion.fecha_deposito
         # Calcular segundos transcurridos
-        segundos_transcurridos = (ahora - inversion.fecha_deposito).seconds
+        segundos_transcurridos = (ahora - fecha_base).seconds
         
         # Calcular interés por segundo
         tasa_segundo = inversion.tasa_interes / 36500 / 86400
-        interes_por_segundo = inversion.monto * tasa_segundo * segundos_transcurridos
+        interes_por_segundo = inversion.monto * tasa_segundo 
         
         # Interés acumulado desde el inicio o último retiro
         fecha_inicio_calculo = inversion.fecha_ultimo_retiro_intereses or inversion.fecha_deposito
@@ -171,8 +175,11 @@ def retirar_intereses(
         )
     
     # Calcular interés acumulado
-    fecha_inicio_calculo = inversion.fecha_ultimo_retiro_intereses or inversion.fecha_deposito
-    segundos_transcurridos = (ahora - fecha_inicio_calculo).seconds
+    if inversion.fecha_ultimo_retiro_intereses:
+        fecha_base = inversion.fecha_ultimo_retiro_intereses
+    else:
+        fecha_base = inversion.fecha_deposito
+    segundos_transcurridos = (ahora - fecha_base).seconds
     tasa_segundo = inversion.tasa_interes / 36500 / 86400
     interes_por_segundo = inversion.monto * tasa_segundo
     interes_acumulado = interes_por_segundo * segundos_transcurridos
