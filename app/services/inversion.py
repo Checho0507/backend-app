@@ -69,14 +69,14 @@ def depositar_inversion(
         "proximo_retiro_intereses": proximo_retiro_intereses.isoformat(),
         "proximo_retiro_capital": proximo_retiro_capital.isoformat()
     }
-
+    
 @router.get("/inversion/estado")
 def obtener_estado_inversion(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
     """Obtener estado actual de las inversiones del usuario"""
-    ahora = datetime.today() + timedelta(hours=19)
+    ahora = datetime.now(ZONE)  # Usar datetime.now con zona horaria
     
     # Obtener todas las inversiones activas del usuario
     inversiones = db.query(Inversion).filter(
@@ -93,24 +93,26 @@ def obtener_estado_inversion(
     detalles_inversiones = []
     
     for inversion in inversiones:
-        if inversion.fecha_ultimo_retiro_intereses:
-            fecha_base = inversion.fecha_ultimo_retiro_intereses
-        else:
-            fecha_base = inversion.fecha_deposito
-        # Calcular segundos transcurridos
-        segundos_transcurridos = (ahora - fecha_base).seconds
+        # Fecha base para cálculo
+        fecha_base = inversion.fecha_ultimo_retiro_intereses or inversion.fecha_deposito
         
-        # Calcular interés por segundo
-        tasa_segundo = inversion.tasa_interes / 36500 / 86400
-        interes_por_segundo = inversion.monto * tasa_segundo 
+        # Calcular segundos transcurridos usando total_seconds()
+        segundos_transcurridos = (ahora - fecha_base).total_seconds()
+        
+        # Asegurarse de que los segundos no sean negativos
+        if segundos_transcurridos < 0:
+            segundos_transcurridos = 0
+        
+        # Calcular interés por segundo (tasa anual 300%)
+        # 300% = 3.0 en decimal, dividido entre 365 días y 86400 segundos
+        tasa_segundo = Decimal(inversion.tasa_interes) / Decimal(100) / Decimal(365) / Decimal(86400)
+        interes_por_segundo = Decimal(inversion.monto) * tasa_segundo 
         
         # Interés acumulado desde el inicio o último retiro
-        fecha_inicio_calculo = inversion.fecha_ultimo_retiro_intereses or inversion.fecha_deposito
-        segundos_transcurridos = (ahora - fecha_inicio_calculo).seconds
-        interes_acumulado_desde_retiro = interes_por_segundo * segundos_transcurridos
+        interes_acumulado_desde_retiro = interes_por_segundo * Decimal(segundos_transcurridos)
         
-        # Interés total acumulado
-        interes_total = inversion.interes_acumulado + interes_acumulado_desde_retiro
+        # Interés total acumulado (sumando lo que ya estaba acumulado)
+        interes_total = Decimal(inversion.interes_acumulado or 0) + interes_acumulado_desde_retiro
         
         # Verificar si puede retirar intereses
         puede_retirar_intereses = ahora >= inversion.fecha_proximo_retiro_intereses
@@ -125,8 +127,8 @@ def obtener_estado_inversion(
             "id": inversion.id,
             "monto": Decimal(inversion.monto),
             "fecha_deposito": inversion.fecha_deposito,
-            "interes_acumulado": Decimal(interes_total),
-            "interes_diario": Decimal(interes_por_segundo * 86400),
+            "interes_acumulado": interes_total,
+            "interes_diario": interes_por_segundo * Decimal(86400),
             "puede_retirar_intereses": puede_retirar_intereses,
             "puede_retirar_capital": puede_retirar_capital,
             "fecha_proximo_retiro_intereses": inversion.fecha_proximo_retiro_intereses,
@@ -164,7 +166,7 @@ def retirar_intereses(
     if not inversion:
         raise HTTPException(status_code=404, detail="Inversión no encontrada")
     
-    ahora = datetime.today() + timedelta(hours=19)
+    ahora = datetime.now(ZONE)  # Usar datetime.now con zona horaria
     
     # Verificar si puede retirar intereses
     if ahora < inversion.fecha_proximo_retiro_intereses:
@@ -175,36 +177,42 @@ def retirar_intereses(
         )
     
     # Calcular interés acumulado
-    if inversion.fecha_ultimo_retiro_intereses:
-        fecha_base = inversion.fecha_ultimo_retiro_intereses
-    else:
-        fecha_base = inversion.fecha_deposito
-    segundos_transcurridos = (ahora - fecha_base).seconds
-    tasa_segundo = inversion.tasa_interes / 36500 / 86400
-    interes_por_segundo = inversion.monto * tasa_segundo
-    interes_acumulado = interes_por_segundo * segundos_transcurridos
+    fecha_base = inversion.fecha_ultimo_retiro_intereses or inversion.fecha_deposito
+    segundos_transcurridos = (ahora - fecha_base).total_seconds()
     
-    if interes_acumulado <= 0:
+    # Asegurarse de que los segundos no sean negativos
+    if segundos_transcurridos < 0:
+        segundos_transcurridos = 0
+    
+    # Calcular interés acumulado
+    tasa_segundo = Decimal(inversion.tasa_interes) / Decimal(100) / Decimal(365) / Decimal(86400)
+    interes_por_segundo = Decimal(inversion.monto) * tasa_segundo
+    interes_acumulado = interes_por_segundo * Decimal(segundos_transcurridos)
+    
+    # Sumar el interés previamente acumulado
+    interes_acumulado_total = Decimal(inversion.interes_acumulado or 0) + interes_acumulado
+    
+    if interes_acumulado_total <= 0:
         raise HTTPException(status_code=400, detail="No hay intereses acumulados para retirar")
     
     # Actualizar saldo del usuario
     usuario = db.query(Usuario).filter(Usuario.id == current_user.id).first()
-    usuario.saldo += Decimal(interes_acumulado)
+    usuario.saldo += interes_acumulado_total
     
     # Registrar retiro
     retiro = RetiroInversion(
         inversion_id=inversion.id,
         tipo="intereses",
-        monto=interes_acumulado,
+        monto=float(interes_acumulado_total),
         fecha=ahora,
         detalles={
-            "interes_acumulado": interes_acumulado,
-            "dias_desde_ultimo_retiro": (ahora - fecha_inicio_calculo).days
+            "interes_acumulado": float(interes_acumulado_total),
+            "dias_desde_ultimo_retiro": (ahora - fecha_base).days
         }
     )
     
     # Actualizar inversión
-    inversion.interes_acumulado = 0
+    inversion.interes_acumulado = 0  # Reiniciar interés acumulado
     inversion.fecha_ultimo_retiro_intereses = ahora
     inversion.fecha_proximo_retiro_intereses = ahora + timedelta(days=30)
     
@@ -214,8 +222,8 @@ def retirar_intereses(
     
     return {
         "success": True,
-        "message": f"✅ Retiro de intereses por ${interes_acumulado:,.0f} realizado con éxito",
-        "monto_retirado": Decimal(interes_acumulado),
+        "message": f"✅ Retiro de intereses por ${interes_acumulado_total:,.0f} realizado con éxito",
+        "monto_retirado": interes_acumulado_total,
         "nuevo_saldo": Decimal(usuario.saldo),
         "proximo_retiro_intereses": inversion.fecha_proximo_retiro_intereses.isoformat()
     }
@@ -240,7 +248,7 @@ def retirar_capital(
     if not inversion:
         raise HTTPException(status_code=404, detail="Inversión no encontrada")
     
-    ahora = datetime.today() + timedelta(hours=19)
+    ahora = datetime.now(ZONE)  # Usar datetime.now con zona horaria
     
     # Verificar si puede retirar capital
     if ahora < inversion.fecha_proximo_retiro_capital:
@@ -250,30 +258,37 @@ def retirar_capital(
             detail=f"Debes esperar {dias_faltantes} días para retirar el capital"
         )
     
-    # Calcular intereses finales
+    # Calcular intereses finales usando segundos para mayor precisión
     fecha_inicio_calculo = inversion.fecha_ultimo_retiro_intereses or inversion.fecha_deposito
-    dias_desde_ultimo_retiro = (ahora - fecha_inicio_calculo).days
-    tasa_diaria = inversion.tasa_interes / 36500
-    interes_diario = inversion.monto * tasa_diaria
-    interes_final = interes_diario * dias_desde_ultimo_retiro
+    segundos_transcurridos = (ahora - fecha_inicio_calculo).total_seconds()
+    
+    if segundos_transcurridos < 0:
+        segundos_transcurridos = 0
+    
+    tasa_segundo = Decimal(inversion.tasa_interes) / Decimal(100) / Decimal(365) / Decimal(86400)
+    interes_por_segundo = Decimal(inversion.monto) * tasa_segundo
+    interes_final = interes_por_segundo * Decimal(segundos_transcurridos)
+    
+    # Sumar el interés previamente acumulado
+    interes_final_total = Decimal(inversion.interes_acumulado or 0) + interes_final
     
     # Monto total a retirar (capital + intereses finales)
-    monto_total = inversion.monto + interes_final
+    monto_total = Decimal(inversion.monto) + interes_final_total
     
     # Actualizar saldo del usuario
     usuario = db.query(Usuario).filter(Usuario.id == current_user.id).first()
-    usuario.saldo += Decimal(monto_total)
+    usuario.saldo += monto_total
     
     # Registrar retiro
     retiro = RetiroInversion(
         inversion_id=inversion.id,
         tipo="capital",
-        monto=Decimal(monto_total),
+        monto=float(monto_total),
         fecha=ahora,
         detalles={
-            "capital": inversion.monto,
-            "intereses_finales": interes_final,
-            "total": monto_total
+            "capital": float(inversion.monto),
+            "intereses_finales": float(interes_final_total),
+            "total": float(monto_total)
         }
     )
     
@@ -289,8 +304,8 @@ def retirar_capital(
         "success": True,
         "message": f"✅ Retiro de capital por ${monto_total:,.0f} realizado con éxito",
         "capital": Decimal(inversion.monto),
-        "intereses_finales": Decimal(interes_final),
-        "total_retirado": Decimal(monto_total),
+        "intereses_finales": interes_final_total,
+        "total_retirado": monto_total,
         "nuevo_saldo": Decimal(usuario.saldo)
     }
 
