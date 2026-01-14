@@ -13,19 +13,19 @@ APUESTA_MINIMA = 100
 OPCIONES = {
     "piedra": {
         "nombre": "Piedra",
-        "emoji": "🪨",
+        "emoji": "✊",
         "vence_a": ["tijera"],
         "es_vencido_por": ["papel"]
     },
     "papel": {
         "nombre": "Papel",
-        "emoji": "📄",
+        "emoji": "🖐",
         "vence_a": ["piedra"],
         "es_vencido_por": ["tijera"]
     },
     "tijera": {
         "nombre": "Tijera",
-        "emoji": "✂️",
+        "emoji": "✌️",
         "vence_a": ["papel"],
         "es_vencido_por": ["piedra"]
     }
