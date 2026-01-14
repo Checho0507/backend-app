@@ -30,9 +30,9 @@ TIPOS_APUESTA = {
     "linea": {"multiplicador": 5, "descripcion": "Apuesta a seis números en dos calles"},
     "docena": {"multiplicador": 2, "descripcion": "Apuesta a una docena (1-12, 13-24, 25-36)"},
     "columna": {"multiplicador": 2, "descripcion": "Apuesta a una columna"},
-    "rojo_negro": {"multipliccionador": 1, "descripcion": "Apuesta a color rojo o negro"},
-    "par_impar": {"multiplicador": 1, "descripcion": "Apuesta a par o impar"},
-    "bajo_alto": {"multiplicador": 1, "descripcion": "Apuesta a bajo (1-18) o alto (19-36)"}
+    "rojo_negro": {"multipliccionador": 2, "descripcion": "Apuesta a color rojo o negro"},
+    "par_impar": {"multiplicador": 2, "descripcion": "Apuesta a par o impar"},
+    "bajo_alto": {"multiplicador": 2, "descripcion": "Apuesta a bajo (1-18) o alto (19-36)"}
 }
 
 class RuletaEuropea:
@@ -254,29 +254,25 @@ def obtener_probabilidades():
     """
     total_numeros = len(NUMEROS_RULETA)
     probabilidades = {}
+    multiplicadores = {}
     
     # Calcular probabilidades para cada tipo de apuesta
     for tipo, info in TIPOS_APUESTA.items():
         if tipo == "numero_pleno":
             probabilidad = 1 / total_numeros * 100
-        elif tipo == "split":
-            probabilidad = 2 / total_numeros * 100
-        elif tipo == "calle":
-            probabilidad = 3 / total_numeros * 100
-        elif tipo == "esquina":
-            probabilidad = 4 / total_numeros * 100
-        elif tipo == "linea":
-            probabilidad = 6 / total_numeros * 100
+            multiplicadores[tipo] = 35
         elif tipo in ["docena", "columna"]:
             probabilidad = 12 / total_numeros * 100
+            multiplicadores[tipo] = 2
         elif tipo in ["rojo_negro", "par_impar", "bajo_alto"]:
             probabilidad = 18 / total_numeros * 100
+            multiplicadores[tipo] = 2
         else:
             probabilidad = 0
         
         probabilidades[tipo] = {
             "probabilidad": round(probabilidad, 2),
-            "multiplicador": info["multiplicador"],
+            "multiplicador": multiplicadores[tipo],
             "descripcion": info["descripcion"]
         }
     
