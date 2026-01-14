@@ -24,10 +24,6 @@ COLORES = {
 # Tipos de apuestas y sus multiplicadores
 TIPOS_APUESTA = {
     "numero_pleno": {"multiplicador": 35, "descripcion": "Apuesta a un número exacto"},
-    "split": {"multiplicador": 17, "descripcion": "Apuesta a dos números adyacentes"},
-    "calle": {"multiplicador": 11, "descripcion": "Apuesta a tres números en línea horizontal"},
-    "esquina": {"multiplicador": 8, "descripcion": "Apuesta a cuatro números en esquina"},
-    "linea": {"multiplicador": 5, "descripcion": "Apuesta a seis números en dos calles"},
     "docena": {"multiplicador": 2, "descripcion": "Apuesta a una docena (1-12, 13-24, 25-36)"},
     "columna": {"multiplicador": 2, "descripcion": "Apuesta a una columna"},
     "rojo_negro": {"multipliccionador": 2, "descripcion": "Apuesta a color rojo o negro"},
