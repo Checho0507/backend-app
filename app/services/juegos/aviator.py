@@ -28,7 +28,8 @@ MAX_HORAS_SESION = 1
 
 # Probabilidades configuradas (más realistas)
 PROBABILIDADES = [
-    (Decimal('1.0'), Decimal('50.0')),       # 25% - crash inmediato en 1.0x
+    (Decimal('1.0'), Decimal('10.0')),        # 25% - crash inmediato en 1.0x
+    (Decimal('1.1'), Decimal('40.0')),       # 25% - crash inmediato en 1.0x
     (Decimal('1.5'), Decimal('30.0')),       # 25% - hasta 1.5x
     (Decimal('2.0'), Decimal('14.0')),       # 20% - hasta 2.0x
     (Decimal('5.0'), Decimal('5.0')),       # 15% - hasta 5.0x
