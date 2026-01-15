@@ -31,6 +31,7 @@ from app.services.juegos.cartamayor import router as cartamayor_router
 from app.services.inversion import router as inversion_router
 from app.services.juegos.piedrapapeltijera import router as piedrapapeltijera_router
 from app.services.juegos.ruletaeuropea import router as ruletaeuropea_router
+from app.services.juegos.poker import router as poker_router
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -260,6 +261,7 @@ app.include_router(aviator_router, prefix="", tags=["Juegos"])
 app.include_router(cartamayor_router, prefix="", tags=["Juegos"])
 app.include_router(piedrapapeltijera_router, prefix="", tags=["Juegos"])
 app.include_router(ruletaeuropea_router, prefix="", tags=["Juegos"])
+app.include_router(poker_router, prefix="", tags=["Juegos"])
 
 # Rutas de transacciones
 app.include_router(transacciones_router, prefix="/transacciones", tags=["Transacciones"])
