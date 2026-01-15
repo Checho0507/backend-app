@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from decimal import Decimal
 import random
 import uuid
 from typing import Dict, List, Tuple, Optional
@@ -425,7 +426,7 @@ def iniciar_poker(
         raise HTTPException(status_code=400, detail=f"Saldo insuficiente. Necesitas ${apuesta} para jugar.")
     
     # Descontar buy-in
-    user.saldo -= apuesta
+    user.saldo -= Decimal(apuesta)
     db.commit()
     db.refresh(user)
     
@@ -621,7 +622,7 @@ def realizar_accion(
         sesion.estado = "terminada"
         
         ganancia = sesion.mesa.bote - sesion.apuesta_inicial
-        user.saldo += ganancia + sesion.apuesta_inicial  # Devuelve buy-in + ganancia
+        user.saldo += Decimal(ganancia) + Decimal(sesion.apuesta_inicial)  # Devuelve buy-in + ganancia
         db.commit()
         
         del game_sessions[session_id]
@@ -693,7 +694,7 @@ def realizar_accion(
         if ganador == jugador:
             jugador.fichas += sesion.mesa.bote
             ganancia = sesion.mesa.bote - sesion.apuesta_inicial
-            user.saldo += ganancia + sesion.apuesta_inicial  # Devuelve buy-in + ganancia
+            user.saldo += Decimal(ganancia) + Decimal(sesion.apuesta_inicial)  # Devuelve buy-in + ganancia
         elif ganador == banca:
             banca.fichas += sesion.mesa.bote
             ganancia = -sesion.apuesta_inicial  # Pierde buy-in
@@ -701,7 +702,7 @@ def realizar_accion(
             mitad_bote = sesion.mesa.bote // 2
             jugador.fichas += mitad_bote
             ganancia = mitad_bote - sesion.apuesta_inicial
-            user.saldo += ganancia + sesion.apuesta_inicial
+            user.saldo += Decimal(ganancia) + Decimal(sesion.apuesta_inicial)
         
         sesion.mesa.bote = 0
         sesion.estado = "terminada"
@@ -751,7 +752,7 @@ def rendirse(
     
     # Devolver 50% del buy-in
     devolucion = sesion.apuesta_inicial // 2
-    user.saldo += devolucion
+    user.saldo += Decimal(devolucion)
     db.commit()
     
     del game_sessions[session_id]
