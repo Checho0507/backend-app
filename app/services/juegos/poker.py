@@ -56,7 +56,6 @@ class AccionJugador(Enum):
     SUBIR = "subir"
     RETIRARSE = "retirarse"
     VER = "ver"
-    APOSTAR = "apostar"
 
 class ManoPoker(Enum):
     ESCALERA_REAL = 10
@@ -100,12 +99,14 @@ class CartaPoker:
 
 class JugadorPoker:
     __slots__ = ("usuario_id", "cartas", "fichas", "apuesta_actual", "esta_en_juego", 
-                 "es_ganador", "ultima_accion", "es_dealer", "es_small_blind", "es_big_blind")
+                 "es_ganador", "ultima_accion", "es_dealer", "es_small_blind", "es_big_blind",
+                 "fichas_iniciales")
     
     def __init__(self, usuario_id: int, fichas_iniciales: int):
         self.usuario_id = usuario_id
         self.cartas: List[CartaPoker] = []
         self.fichas = fichas_iniciales
+        self.fichas_iniciales = fichas_iniciales
         self.apuesta_actual = 0
         self.esta_en_juego = True
         self.es_ganador = False
@@ -133,6 +134,9 @@ class JugadorPoker:
     
     def puede_jugar(self) -> bool:
         return self.esta_en_juego
+    
+    def total_apostado(self) -> int:
+        return self.fichas_iniciales - self.fichas
 
 class MesaPoker:
     __slots__ = ("cartas_comunitarias", "bote", "apuesta_minima", "ronda_actual", 
@@ -161,7 +165,6 @@ class MesaPoker:
                 break
             if self.jugadores[self.turno_actual].puede_jugar():
                 return
-        # Si todos están fuera, terminar ronda
     
     def agregar_al_bote(self, cantidad: int):
         self.bote += cantidad
@@ -201,8 +204,8 @@ class SesionPoker:
         random.shuffle(self.baraja)
         
         # Crear jugadores
-        jugador_humano = JugadorPoker(usuario_id, apuesta * 10)  # 10x buy-in
-        jugador_banca = JugadorPoker(banca_id, apuesta * 10)
+        jugador_humano = JugadorPoker(usuario_id, apuesta)
+        jugador_banca = JugadorPoker(banca_id, apuesta * 2)
         
         # Asignar posiciones (simplificado)
         jugador_humano.es_dealer = True
@@ -226,15 +229,11 @@ class SesionPoker:
     def procesar_blinds(self):
         # Small blind y big blind
         for jugador in self.mesa.jugadores:
-            if jugador.es_small_blind:
-                apuesta = min(self.mesa.small_blind, jugador.fichas)
-                jugador.apostar(apuesta)
-                self.mesa.agregar_al_bote(apuesta)
-            elif jugador.es_big_blind:
+            if jugador.es_big_blind:
                 apuesta = min(self.mesa.big_blind, jugador.fichas)
-                jugador.apostar(apuesta)
+                if jugador.apostar(apuesta):
+                    self.mesa.agregar_al_bote(apuesta)
                 self.mesa.apuesta_minima = apuesta
-                self.mesa.agregar_al_bote(apuesta)
     
     def evaluar_mano(self, cartas: List[CartaPoker]) -> Tuple[ManoPoker, List[int]]:
         """Evalúa una mano de poker y retorna (tipo_de_mano, valores_relevantes)"""
@@ -358,7 +357,6 @@ def limpiar_sesiones_expiradas():
             if now - sdata.created_at > timedelta(hours=MAX_HORAS_SESION):
                 expiradas.append(sid)
         else:
-            # Si no es una sesión de poker, también limpiar
             created = sdata.get("created_at", now)
             if now - created > timedelta(hours=MAX_HORAS_SESION):
                 expiradas.append(sid)
@@ -455,7 +453,7 @@ def iniciar_poker(
         "bote": sesion.mesa.bote,
         "apuesta_minima": sesion.mesa.apuesta_minima,
         "ronda_actual": sesion.mesa.ronda_actual.value,
-        "turno_actual": "jugador",  # El jugador humano empieza
+        "turno_actual": "jugador",
         "small_blind": sesion.mesa.small_blind,
         "big_blind": sesion.mesa.big_blind,
         "nuevo_saldo": user.saldo,
@@ -494,21 +492,25 @@ def realizar_accion(
     
     elif accion == "igualar":
         cantidad_necesaria = sesion.mesa.apuesta_minima - jugador.apuesta_actual
-        if cantidad_necesaria <= jugador.fichas:
+        if cantidad_necesaria <= jugador.fichas and cantidad_necesaria > 0:
             accion_valida = True
-            jugador.apostar(cantidad_necesaria)
-            sesion.mesa.agregar_al_bote(cantidad_necesaria)
-            jugador.ultima_accion = "igualar"
+            if jugador.apostar(cantidad_necesaria):
+                sesion.mesa.agregar_al_bote(cantidad_necesaria)
+                jugador.ultima_accion = "igualar"
+            else:
+                monto_valido = False
         else:
             monto_valido = False
     
     elif accion == "subir":
         if cantidad >= sesion.mesa.apuesta_minima * 2 and cantidad <= jugador.fichas:
             accion_valida = True
-            jugador.apostar(cantidad)
-            sesion.mesa.apuesta_minima = cantidad
-            sesion.mesa.agregar_al_bote(cantidad)
-            jugador.ultima_accion = "subir"
+            if jugador.apostar(cantidad):
+                sesion.mesa.apuesta_minima = cantidad
+                sesion.mesa.agregar_al_bote(cantidad)
+                jugador.ultima_accion = "subir"
+            else:
+                monto_valido = False
         else:
             monto_valido = False
     
@@ -537,7 +539,7 @@ def realizar_accion(
     sesion.historico_acciones.append({
         "jugador": "usuario",
         "accion": accion,
-        "cantidad": cantidad if accion in ["subir", "apostar"] else 0,
+        "cantidad": cantidad if accion in ["subir"] else (sesion.mesa.apuesta_minima - jugador.apuesta_actual) if accion == "igualar" else 0,
         "timestamp": datetime.now().isoformat()
     })
     
@@ -548,8 +550,10 @@ def realizar_accion(
         sesion.mesa.bote = 0
         sesion.estado = "terminada"
         
-        # Calcular ganancia/pérdida
-        ganancia = -sesion.apuesta_inicial  # Pierde su buy-in
+        # Calcular pérdida (lo apostado hasta ahora)
+        total_apostado_jugador = jugador.total_apostado()
+        perdida = total_apostado_jugador
+        ganancia = -perdida
         
         del game_sessions[session_id]
         
@@ -558,83 +562,63 @@ def realizar_accion(
             "ganancia": ganancia,
             "nuevo_saldo": user.saldo,
             "bote_final": 0,
-            "estado": "terminada"
-        }
-    
-    # Turno de la banca (IA simplificada)
-    acciones_banca = ["ver", "igualar", "subir", "retirarse"]
-    
-    # Evaluar mano de la banca
-    mano_banca, _ = sesion.evaluar_mano(banca.cartas + sesion.mesa.cartas_comunitarias)
-    fuerza_mano = mano_banca.value
-    
-    # Decisión basada en fuerza de mano
-    if fuerza_mano >= ManoPoker.PAR.value:
-        # Mano buena: subir o igualar
-        if random.random() < 0.7:  # 70% de probabilidad de subir con buena mano
-            subida_banca = min(sesion.mesa.apuesta_minima * 2, banca.fichas)
-            banca.apostar(subida_banca)
-            sesion.mesa.apuesta_minima = subida_banca
-            sesion.mesa.agregar_al_bote(subida_banca)
-            accion_banca = "subir"
-        else:
-            if sesion.mesa.apuesta_minima > 0:
-                cantidad_necesaria = sesion.mesa.apuesta_minima - banca.apuesta_actual
-                if cantidad_necesaria <= banca.fichas:
-                    banca.apostar(cantidad_necesaria)
-                    sesion.mesa.agregar_al_bote(cantidad_necesaria)
-                    accion_banca = "igualar"
-                else:
-                    banca.retirarse()
-                    accion_banca = "retirarse"
-            else:
-                accion_banca = "ver"
-    else:
-        # Mano mala: ver o retirarse
-        if random.random() < 0.4:  # 40% de bluff
-            if sesion.mesa.apuesta_minima > 0:
-                cantidad_necesaria = sesion.mesa.apuesta_minima - banca.apuesta_actual
-                if cantidad_necesaria <= banca.fichas:
-                    banca.apostar(cantidad_necesaria)
-                    sesion.mesa.agregar_al_bote(cantidad_necesaria)
-                    accion_banca = "igualar"
-                else:
-                    banca.retirarse()
-                    accion_banca = "retirarse"
-            else:
-                accion_banca = "ver"
-        else:
-            banca.retirarse()
-            accion_banca = "retirarse"
-    
-    # Registrar acción de la banca
-    sesion.historico_acciones.append({
-        "jugador": "banca",
-        "accion": accion_banca,
-        "cantidad": subida_banca if accion_banca == "subir" else 0,
-        "timestamp": datetime.now().isoformat()
-    })
-    
-    # Si banca se retira, jugador gana
-    if accion_banca == "retirarse":
-        jugador.fichas += sesion.mesa.bote
-        sesion.mesa.bote = 0
-        sesion.estado = "terminada"
-        
-        ganancia = sesion.mesa.bote - sesion.apuesta_inicial
-        user.saldo += Decimal(ganancia) + Decimal(sesion.apuesta_inicial)  # Devuelve buy-in + ganancia
-        db.commit()
-        
-        del game_sessions[session_id]
-        
-        return {
-            "resultado": "La banca se retiró. ¡Ganaste el bote!",
-            "ganancia": ganancia,
-            "nuevo_saldo": user.saldo,
-            "bote_final": 0,
             "estado": "terminada",
             "cartas_banca": [carta_a_dict(c) for c in banca.cartas]
         }
+    
+    # Turno de la banca (IA que NUNCA se retira)
+    # Evaluar mano de la banca
+    cartas_banca_comunitarias = banca.cartas + sesion.mesa.cartas_comunitarias
+    mano_banca_eval, _ = sesion.evaluar_mano(cartas_banca_comunitarias) if cartas_banca_comunitarias else (ManoPoker.CARTA_ALTA, [])
+    fuerza_mano = mano_banca_eval.value
+    
+    # Decisión basada en fuerza de mano - LA BANCA NUNCA SE RETIRA
+    if fuerza_mano >= ManoPoker.PAR.value:
+        # Mano buena: subir o igualar
+        if random.random() < 0.6:  # 60% de probabilidad de subir con buena mano
+            subida_banca = min(sesion.mesa.apuesta_minima * 2, banca.fichas)
+            if subida_banca > 0:
+                banca.apostar(subida_banca)
+                sesion.mesa.apuesta_minima = subida_banca
+                sesion.mesa.agregar_al_bote(subida_banca)
+                accion_banca = "subir"
+            else:
+                accion_banca = "ver"
+        else:
+            if sesion.mesa.apuesta_minima > 0:
+                cantidad_necesaria = sesion.mesa.apuesta_minima - banca.apuesta_actual
+                if cantidad_necesaria <= banca.fichas and cantidad_necesaria > 0:
+                    banca.apostar(cantidad_necesaria)
+                    sesion.mesa.agregar_al_bote(cantidad_necesaria)
+                    accion_banca = "igualar"
+                else:
+                    accion_banca = "ver"
+            else:
+                accion_banca = "ver"
+    else:
+        # Mano mala: ver o igualar, pero NUNCA retirarse
+        if random.random() < 0.3:  # 30% de bluff
+            if sesion.mesa.apuesta_minima > 0:
+                cantidad_necesaria = sesion.mesa.apuesta_minima - banca.apuesta_actual
+                if cantidad_necesaria <= banca.fichas and cantidad_necesaria > 0:
+                    banca.apostar(cantidad_necesaria)
+                    sesion.mesa.agregar_al_bote(cantidad_necesaria)
+                    accion_banca = "igualar"
+                else:
+                    accion_banca = "ver"
+            else:
+                accion_banca = "ver"
+        else:
+            accion_banca = "ver"
+    
+    # Registrar acción de la banca
+    cantidad_banca = subida_banca if accion_banca == "subir" else (sesion.mesa.apuesta_minima - banca.apuesta_actual) if accion_banca == "igualar" else 0
+    sesion.historico_acciones.append({
+        "jugador": "banca",
+        "accion": accion_banca,
+        "cantidad": cantidad_banca,
+        "timestamp": datetime.now().isoformat()
+    })
     
     # Verificar si ronda terminó (ambos han apostado igual)
     if jugador.apuesta_actual == banca.apuesta_actual and jugador.apuesta_actual >= sesion.mesa.apuesta_minima:
@@ -658,6 +642,9 @@ def realizar_accion(
     
     # Si es showdown, determinar ganador
     if sesion.estado == "showdown":
+        # Mostrar cartas de la banca
+        mostrar_cartas_banca = True
+        
         # Evaluar manos
         mano_jugador, valores_jugador = sesion.evaluar_mano(jugador.cartas + sesion.mesa.cartas_comunitarias)
         mano_banca_eval, valores_banca = sesion.evaluar_mano(banca.cartas + sesion.mesa.cartas_comunitarias)
@@ -690,19 +677,38 @@ def realizar_accion(
                 mitad_bote = sesion.mesa.bote // 2
                 jugador.fichas += mitad_bote
                 banca.fichas += sesion.mesa.bote - mitad_bote
+                ganancia = mitad_bote - jugador.total_apostado()
+                if ganancia > 0:
+                    user.saldo += Decimal(ganancia)
+                db.commit()
+                db.refresh(user)
+                
+                del game_sessions[session_id]
+                
+                return {
+                    "resultado": resultado,
+                    "ganancia": ganancia,
+                    "nuevo_saldo": user.saldo,
+                    "bote_final": sesion.mesa.bote,
+                    "estado": "terminada",
+                    "cartas_banca": [carta_a_dict(c) for c in banca.cartas],
+                    "cartas_comunitarias": [carta_a_dict(c) for c in sesion.mesa.cartas_comunitarias],
+                    "mano_jugador": mano_jugador.name.replace('_', ' ').title(),
+                    "mano_banca": mano_banca_eval.name.replace('_', ' ').title()
+                }
         
+        # Asignar bote al ganador y calcular ganancias
         if ganador == jugador:
             jugador.fichas += sesion.mesa.bote
-            ganancia = sesion.mesa.bote - sesion.apuesta_inicial
-            user.saldo += Decimal(ganancia) + Decimal(sesion.apuesta_inicial)  # Devuelve buy-in + ganancia
+            ganancia = sesion.mesa.bote - jugador.total_apostado()
+            if ganancia > 0:
+                user.saldo += Decimal(ganancia)
+                db.commit()
+                db.refresh(user)
         elif ganador == banca:
             banca.fichas += sesion.mesa.bote
-            ganancia = -sesion.apuesta_inicial  # Pierde buy-in
-        else:  # Empate
-            mitad_bote = sesion.mesa.bote // 2
-            jugador.fichas += mitad_bote
-            ganancia = mitad_bote - sesion.apuesta_inicial
-            user.saldo += Decimal(ganancia) + Decimal(sesion.apuesta_inicial)
+            ganancia = -jugador.total_apostado()  # El jugador pierde lo apostado
+            # El saldo ya se descontó al inicio, no hay que hacer nada más
         
         sesion.mesa.bote = 0
         sesion.estado = "terminada"
@@ -716,7 +722,7 @@ def realizar_accion(
             "resultado": resultado,
             "ganancia": ganancia,
             "nuevo_saldo": user.saldo,
-            "bote_final": 0,
+            "bote_final": sesion.mesa.bote,
             "estado": "terminada",
             "cartas_banca": [carta_a_dict(c) for c in banca.cartas],
             "cartas_comunitarias": [carta_a_dict(c) for c in sesion.mesa.cartas_comunitarias],
@@ -750,16 +756,29 @@ def rendirse(
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
-    # Devolver 50% del buy-in
-    devolucion = sesion.apuesta_inicial // 2
+    # Calcular cuánto ha apostado el jugador hasta ahora
+    jugador = sesion.mesa.jugadores[0]
+    total_apostado = jugador.total_apostado()
+    
+    if total_apostado == 0:
+        # Si no ha apostado nada, devolver todo el buy-in
+        devolucion = sesion.apuesta_inicial
+        ganancia = 0
+    else:
+        # Devolver 50% de lo apostado hasta ahora
+        devolucion = total_apostado // 2
+        ganancia = devolucion - total_apostado  # Negativo porque es una pérdida
+    
+    # Actualizar saldo: devolvemos la parte correspondiente
     user.saldo += Decimal(devolucion)
     db.commit()
     
     del game_sessions[session_id]
     
     return {
-        "resultado": "Te rendiste. Recuperaste el 50% de tu buy-in.",
+        "resultado": f"Te rendiste. Recuperaste ${devolucion} de ${total_apostado} apostados." if total_apostado > 0 else "Te rendiste antes de apostar. Recuperaste tu buy-in completo.",
         "devolucion": devolucion,
+        "ganancia": ganancia,
         "nuevo_saldo": user.saldo,
         "estado": "terminada"
     }
