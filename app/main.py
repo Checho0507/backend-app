@@ -114,6 +114,14 @@ async def lifespan(app: FastAPI):
             replace_existing=True
         )
         
+        scheduler.add_job(
+            interes_acumulado_por_segundo,
+            'interval',
+            seconds=1,
+            id='acumular_intereses',
+            replace_existing=True
+        )
+
         # Si estás en desarrollo, puedes agregar un trigger de prueba
         if os.environ.get("RAILWAY_ENVIRONMENT") != "production":
             scheduler.add_job(
