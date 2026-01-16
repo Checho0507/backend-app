@@ -14,6 +14,31 @@ router = APIRouter()
 
 ZONE = pytz.timezone("America/Bogota")
 
+def acumular_intereses(db: Session):
+    """Función para acumular intereses en todas las inversiones activas"""
+    ahora = datetime.today() + timedelta(hours=19)
+    
+    inversiones_activas = db.query(Inversion).filter(Inversion.activa == True).all()
+    
+    for inversion in inversiones_activas:
+        # Calcular segundos transcurridos desde el último cálculo o depósito
+        fecha_inicio_calculo = inversion.fecha_ultimo_retiro_intereses or inversion.fecha_deposito
+        dias_transcurridos = (ahora - fecha_inicio_calculo).days
+        segundos_transcurridos = (ahora - fecha_inicio_calculo).seconds
+        segundos_transcurridos += dias_transcurridos * 86400
+        
+        # Calcular interés por segundo
+        tasa_segundo = inversion.tasa_interes / 36500 / 86400
+        interes_por_segundo = inversion.monto * tasa_segundo
+        
+        # Interés acumulado en este período
+        interes_acumulado = interes_por_segundo * segundos_transcurridos
+        
+        # Actualizar interés acumulado en la inversión
+        inversion.interes_acumulado += interes_acumulado
+    
+    db.commit()
+
 @router.post("/inversion/depositar")
 def depositar_inversion(
     data: dict,

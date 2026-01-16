@@ -18,6 +18,7 @@ from app.services.verify import router as verify_router
 from app.services.admin import router as admin_router
 from app.services.vip import router as vip_router
 from app.services.vip import resolver_sorteo
+from app.services.inversion import acumular_intereses
 from app.services.juegos.blackjack import router as blackjack_router
 from app.services.juegos.bonus import router as bonus_router
 from app.services.juegos.ruleta import router as ruleta_router
@@ -65,6 +66,23 @@ async def ejecutar_sorteo_automatico():
             print("✅ [SCHEDULER] Sorteo completado exitosamente")
         except Exception as e:
             print(f"❌ [SCHEDULER] Error durante el sorteo: {e}")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"🔥 [SCHEDULER] Error crítico: {e}")
+        
+async def interes_acumulado_por_segundo():
+    """Calcular y acumular intereses para todas las inversiones activas cada segundo"""
+    try:
+        print("💰 [SCHEDULER] Iniciando acumulación de intereses...")
+        from app.database import SessionLocal
+        db = SessionLocal()
+        try:
+            from app.services.inversion import acumular_intereses
+            acumular_intereses(db)
+            print("✅ [SCHEDULER] Intereses acumulados exitosamente")
+        except Exception as e:
+            print(f"❌ [SCHEDULER] Error durante la acumulación de intereses: {e}")
         finally:
             db.close()
     except Exception as e:
