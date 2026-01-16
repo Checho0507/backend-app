@@ -117,7 +117,7 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(
             interes_acumulado_por_segundo,
             'interval',
-            seconds=1,
+            seconds=30,
             id='acumular_intereses',
             replace_existing=True
         )
