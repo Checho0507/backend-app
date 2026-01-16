@@ -16,7 +16,7 @@ ZONE = pytz.timezone("America/Bogota")
 
 def acumular_intereses(db: Session):
     """Función para acumular intereses en todas las inversiones activas"""
-    ahora = datetime.today() + timedelta(hours=19)
+    ahora = datetime.today
     
     inversiones_activas = db.query(Inversion).filter(Inversion.activa == True).all()
     
@@ -35,7 +35,7 @@ def acumular_intereses(db: Session):
         interes_acumulado = interes_por_segundo * segundos_transcurridos
         
         # Actualizar interés acumulado en la inversión
-        inversion.interes_acumulado += interes_acumulado
+        inversion.interes_acumulado = interes_acumulado
     
     db.commit()
 
