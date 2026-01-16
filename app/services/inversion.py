@@ -133,7 +133,7 @@ def obtener_estado_inversion(
         interes_acumulado_desde_retiro = interes_por_segundo * segundos_transcurridos
         
         # Interés total acumulado
-        interes_total = inversion.interes_acumulado + interes_acumulado_desde_retiro
+        interes_total =interes_acumulado_desde_retiro
         
         # Verificar si puede retirar intereses
         puede_retirar_intereses = ahora >= inversion.fecha_proximo_retiro_intereses
