@@ -16,7 +16,7 @@ ZONE = pytz.timezone("America/Bogota")
 
 def acumular_intereses(db: Session):
     """Función para acumular intereses en todas las inversiones activas"""
-    ahora = datetime.today() + timedelta(hours=19)
+    ahora = datetime.today() + timedelta(hours=-5)
     
     inversiones_activas = db.query(Inversion).filter(Inversion.activa == True).all()
     
@@ -101,7 +101,7 @@ def obtener_estado_inversion(
     current_user: Usuario = Depends(get_current_user)
 ):
     """Obtener estado actual de las inversiones del usuario"""
-    ahora = datetime.today() + timedelta(hours=19)
+    ahora = datetime.today() + timedelta(hours=-5)
     
     # Obtener todas las inversiones activas del usuario
     inversiones = db.query(Inversion).filter(
@@ -187,7 +187,7 @@ def retirar_intereses(
     if not inversion:
         raise HTTPException(status_code=404, detail="Inversión no encontrada")
     
-    ahora = datetime.today() + timedelta(hours=19)
+    ahora = datetime.today() + timedelta(hours=-5)
     
     # Verificar si puede retirar intereses
     if ahora < inversion.fecha_proximo_retiro_intereses:
@@ -262,7 +262,7 @@ def retirar_capital(
     if not inversion:
         raise HTTPException(status_code=404, detail="Inversión no encontrada")
     
-    ahora = datetime.today() + timedelta(hours=19)
+    ahora = datetime.today() + timedelta(hours=-5)
     
     # Verificar si puede retirar capital
     if ahora < inversion.fecha_proximo_retiro_capital:
