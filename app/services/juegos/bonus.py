@@ -1,7 +1,7 @@
 from fastapi import APIRouter, FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import date
+from datetime import date, datetime, timedelta
 from ...models.usuario import Usuario
 from ...database import get_db
 from ...api.auth import get_current_user
@@ -26,7 +26,7 @@ def reclamar_bonus_diario(
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    hoy = date.today()
+    hoy = datetime.today()+timedelta(hours=-3)
 
     # Verificar si ya reclamó hoy
     if user.ultima_recompensa == hoy:
