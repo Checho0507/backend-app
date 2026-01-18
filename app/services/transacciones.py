@@ -390,7 +390,7 @@ async def realizar_retiro(
         # Crear retiro
         nuevo_retiro = retiro_model.Retiro(
             usuario_id=current_user.id,
-            monto=monto*0.95,  # Asumiendo una comisión del 5%
+            monto=monto,  # Asumiendo una comisión del 5%
             metodo_retiro=metodo_retiro,
             cuenta_destino=cuenta_destino.strip(),
             comision=comision if comision else 0.0,
