@@ -64,7 +64,7 @@ def depositar_inversion(
         )
     
     # Calcular fechas de retiro + 19 horas
-    ahora = datetime.today() + timedelta(hours=19)
+    ahora = datetime.today() + timedelta(hours=-5)
     proximo_retiro_intereses = ahora + timedelta(days=30)
     proximo_retiro_capital = ahora + timedelta(days=180)
     
