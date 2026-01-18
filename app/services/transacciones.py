@@ -390,7 +390,7 @@ async def realizar_retiro(
         # Crear retiro
         nuevo_retiro = retiro_model.Retiro(
             usuario_id=current_user.id,
-            monto=monto,
+            monto=monto*0.95,  # Asumiendo una comisión del 5%
             metodo_retiro=metodo_retiro,
             cuenta_destino=cuenta_destino.strip(),
             comision=comision if comision else 0.0,
@@ -411,6 +411,7 @@ async def realizar_retiro(
             "mensaje": "Retiro solicitado correctamente",
             "referencia": referencia,
             "nuevo_saldo": float(current_user.saldo),
+            "comision": float(nuevo_retiro.comision),
             "estado": "PENDIENTE",
             "detalles": {
                 "monto": float(monto),
@@ -549,7 +550,7 @@ async def aprobar_retiro(
             }
         
         # Actualizar saldo del usuario
-        usuario_retiro.saldo = float(usuario_retiro.saldo) - float(retiro_obj.monto)
+        usuario_retiro.saldo = float(usuario_retiro.saldo) - float(retiro_obj.monto) 
         
         # Actualizar estado del retiro
         retiro_obj.estado = "APROBADO"
