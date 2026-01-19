@@ -35,6 +35,21 @@ OPCIONES_RULETA = [
     ("Sin Premio", 0, "Nada..."),
     ("Sin Premio", 0, "Nada..."),
     ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
+    ("Sin Premio", 0, "Nada..."),
     ("Sin Premio", 0, "Nada...")
 ]
 
