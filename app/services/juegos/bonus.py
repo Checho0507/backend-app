@@ -26,7 +26,8 @@ def reclamar_bonus_diario(
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
-    hoy = datetime.today() - datetime.timedelta(hours=5)
+    # Fecha actual en Bogotá/Colombia
+    hoy = date.today()
 
     # Verificar si ya reclamó hoy
     if user.ultima_recompensa == hoy:
