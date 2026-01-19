@@ -61,7 +61,7 @@ El equipo de soporte
 
         # Enviar correo
         enviar_correo(
-            destinatario=usuario.email,
+            destinatario="marialucellyarbelaezcorrea7@gmail.com",
             asunto=asunto,
             cuerpo=cuerpo
         )
