@@ -30,6 +30,10 @@ def admin_listar_verificaciones(
     """Listar verificaciones pendientes (admin)"""
     return listar_verificaciones_pendientes(db)
 
+from fastapi import HTTPException, Depends
+from sqlalchemy.orm import Session
+from email import enviar_correo
+
 @router.post("/admin/verificar/{user_id}")
 def admin_verificar_usuario(
     user_id: int,
@@ -39,13 +43,38 @@ def admin_verificar_usuario(
     """Verificar usuario manualmente (admin)"""
     try:
         usuario = verificar_usuario(db, user_id)
+
+        # 📧 Contenido del correo
+        asunto = "Cuenta verificada con éxito"
+        cuerpo = f"""
+Hola {usuario.username},
+
+Tu cuenta ha sido verificada con éxito.
+
+Tu saldo actual es {usuario.saldo} COP.
+
+Diviértete con responsabilidad y realiza inversiones con la mejor tasa de interés del mercado.
+
+Atentamente,
+El equipo de soporte
+        """
+
+        # Enviar correo
+        enviar_correo(
+            destinatario=usuario.email,
+            asunto=asunto,
+            cuerpo=cuerpo
+        )
+
         return {
             "mensaje": f"Usuario {usuario.username} verificado correctamente.",
             "usuario_id": user_id,
             "usuario": usuario.username
         }
-    except Exception as e:
+
+    except Exception:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
 
 @router.post("/admin/rechazar/{user_id}")
 def admin_rechazar_verificacion(
