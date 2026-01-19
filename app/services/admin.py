@@ -32,7 +32,7 @@ def admin_listar_verificaciones(
 
 from fastapi import HTTPException, Depends
 from sqlalchemy.orm import Session
-from mail import enviar_correo
+from .mail import enviar_correo
 
 @router.post("/admin/verificar/{user_id}")
 def admin_verificar_usuario(
