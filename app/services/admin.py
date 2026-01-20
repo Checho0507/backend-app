@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from ..database import get_db
@@ -6,6 +7,8 @@ from ..models.usuario import Usuario
 from ..schemas.usuario import UsuarioOut
 from ..models.verificacion import Verificacion
 from ..schemas.verificacion import VerificacionOut
+from ..services.mail import smtp2go
+from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 from ..crud import listar_usuarios, listar_verificaciones_pendientes, verificar_usuario
 
@@ -30,50 +33,76 @@ def admin_listar_verificaciones(
     """Listar verificaciones pendientes (admin)"""
     return listar_verificaciones_pendientes(db)
 
-from fastapi import HTTPException, Depends
-from sqlalchemy.orm import Session
-from .mail import enviar_correo
-
 @router.post("/admin/verificar/{user_id}")
-def admin_verificar_usuario(
+async def admin_verificar_usuario(
+    user_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(verificar_admin)  # Asumiendo que tienes esta función
+):
+    """Verificar usuario manualmente - Versión simple"""
+    
+    # Buscar usuario
+    usuario = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    if usuario.verificado:
+        raise HTTPException(status_code=400, detail="Usuario ya verificado")
+    
+    if not usuario.email:
+        raise HTTPException(status_code=400, detail="Usuario sin email")
+    
+    # Marcar como verificado
+    usuario.verificado = True
+    usuario.fecha_verificacion = datetime.now()
+    db.commit()
+    
+    # Función para enviar email en background
+    def enviar_email():
+        try:
+            resultado = smtp2go.enviar_verificacion(usuario)
+            # Opcional: marcar que se envió el correo
+            if resultado.get("success"):
+                usuario.correo_enviado = True
+                usuario.correo_fecha = datetime.now()
+                db.commit()
+        except Exception as e:
+            print(f"Error enviando email: {e}")
+    
+    # Agregar tarea en background
+    background_tasks.add_task(enviar_email)
+    
+    return {
+        "ok": True,
+        "mensaje": f"Usuario {usuario.username} verificado",
+        "email": usuario.email,
+        "verificado": True,
+        "saldo": usuario.saldo
+    }
+
+# Endpoint para verificar estado de envío de correo
+@router.get("/admin/verificar/{user_id}/status")
+def verificar_estado_correo(
     user_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(verificar_admin)
 ):
-    """Verificar usuario manualmente (admin)"""
-    try:
-        usuario = verificar_usuario(db, user_id)
-
-        # 📧 Contenido del correo
-        asunto = "Cuenta verificada con éxito"
-        cuerpo = f"""
-Hola {usuario.username},
-
-Tu cuenta ha sido verificada con éxito.
-
-Tu saldo actual es {usuario.saldo} COP.
-
-Diviértete con responsabilidad y realiza inversiones con la mejor tasa de interés del mercado.
-
-Atentamente,
-El equipo de soporte
-        """
-
-        # Enviar correo
-        enviar_correo(
-            destinatario="marialucellyarbelaezcorrea7@gmail.com",
-            asunto=asunto,
-            cuerpo=cuerpo
-        )
-
-        return {
-            "mensaje": f"Usuario {usuario.username} verificado correctamente.",
-            "usuario_id": user_id,
-            "usuario": usuario.username
-        }
-
-    except Exception:
+    """Verifica si el correo de verificación fue enviado"""
+    usuario = db.query(Usuario).filter(Usuario.id == user_id).first()
+    
+    if not usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    return {
+        "usuario_id": usuario.id,
+        "usuario": usuario.username,
+        "email": usuario.email,
+        "verificado": usuario.verificado,
+        "correo_verificacion_enviado": usuario.correo_verificacion_enviado,
+        "correo_verificacion_fecha": usuario.correo_verificacion_fecha,
+        "fecha_verificacion": usuario.fecha_verificacion
+    }
 
 
 @router.post("/admin/rechazar/{user_id}")
