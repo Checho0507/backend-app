@@ -176,7 +176,7 @@ class SMTP2GoSimple:
                 </div>
                 
                 <center>
-                    <a href="https://betref.up.railway.up/dashboard" class="button">
+                    <a href="https://betref.up.railway.app/inicio" class="button">
                         🚀 IR A MI DASHBOARD
                     </a>
                 </center>
