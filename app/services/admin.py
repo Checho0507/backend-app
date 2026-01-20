@@ -56,6 +56,8 @@ async def admin_verificar_usuario(
     # Marcar como verificado
     usuario.verificado = True
     usuario.fecha_verificacion = datetime.now()
+    usuario.verificacion_pendiente = False
+    usuario.saldo += 10000  # Bonus por verificación
     db.commit()
     
     # Función para enviar email en background
