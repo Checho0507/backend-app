@@ -4,7 +4,6 @@ from .verificacion import VerificacionOut
 
 
 class UsuarioCreate(BaseModel):
-    id: int # ID generado aleatoriamente en el backend
     username: str
     email: EmailStr
     password: str
