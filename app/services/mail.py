@@ -155,28 +155,28 @@ class SMTP2GoSimple:
                     <h3 style="color: #333; margin-bottom: 15px;">🔓 AHORA PUEDES:</h3>
                     
                     <div class="feature-item">
-                        <div class="feature-icon">💼</div>
+                        <div class="feature-icon">👥</div>
+                        <div>Ganar dinero con el sistema de referidos</div>
+                    </div>
+                    
+                    <div class="feature-item">
+                        <div class="feature-icon">🎟</div>
+                        <div>Participar en el sorteo VIP</div>
+                    </div>
+                    
+                    <div class="feature-item">
+                        <div class="feature-icon">💰</div>
                         <div>Realizar inversiones</div>
                     </div>
                     
                     <div class="feature-item">
-                        <div class="feature-icon">📊</div>
-                        <div>Consultar portafolio detallado</div>
-                    </div>
-                    
-                    <div class="feature-item">
-                        <div class="feature-icon">🔔</div>
-                        <div>Configurar alertas personalizadas</div>
-                    </div>
-                    
-                    <div class="feature-item">
-                        <div class="feature-icon">📈</div>
-                        <div>Acceder a reportes en tiempo real</div>
+                        <div class="feature-icon">🎮</div>
+                        <div>Participar en juegos de azar y tragamonedas</div>
                     </div>
                 </div>
                 
                 <center>
-                    <a href="https://tudominio.com/dashboard" class="button">
+                    <a href="https://betref.up.railway.up/dashboard" class="button">
                         🚀 IR A MI DASHBOARD
                     </a>
                 </center>
@@ -188,7 +188,7 @@ class SMTP2GoSimple:
                 </div>
                 
                 <p><strong>¿Necesitas ayuda?</strong><br>
-                📧 <a href="mailto:soporte@tudominio.com">soporte@tudominio.com</a><br>
+                📧 <a href="mailto:betref.soporte@outlook.es">betref.soporte@outlook.es</a><br>
                 📞 Lunes a Viernes 8am - 6pm</p>
             </div>
             
