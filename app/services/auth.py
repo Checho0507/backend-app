@@ -26,8 +26,11 @@ def registrar_usuario(user: UsuarioCreate, db: Session = Depends(get_db)):
     if db.query(usuario.Usuario).filter(usuario.Usuario.username == user.username).first():
         raise HTTPException(status_code=400, detail="El nombre de usuario ya está en uso")
     
-    if not user.referido_por:
-        user.referido_por = 0
+    # Convertir referido_por a int o usar 0 si es None
+    if user.referido_por is None:
+        ref_id = 0
+    else:
+        ref_id = int(user.referido_por)
 
     # Crear nuevo usuario
     nuevo_usuario = usuario.Usuario(
@@ -35,8 +38,8 @@ def registrar_usuario(user: UsuarioCreate, db: Session = Depends(get_db)):
         username=user.username,
         email=user.email,
         password_hash=hash_password(user.password),
-        referido_por=int(user.referido_por),
-        saldo=1000 if user.referido_por else 0  # Bonus por referido
+        referido_por=ref_id,
+        saldo=1000 if ref_id != 0 else 0  # Bonus por referido
     )
 
     db.add(nuevo_usuario)
@@ -44,8 +47,8 @@ def registrar_usuario(user: UsuarioCreate, db: Session = Depends(get_db)):
     db.refresh(nuevo_usuario)
 
     # Dar bonus al referidor si existe
-    if user.referido_por:
-        referidor = db.query(usuario.Usuario).filter_by(id=user.referido_por).first()
+    if ref_id != 0:
+        referidor = db.query(usuario.Usuario).filter_by(id=ref_id).first()
         if referidor:
             referidor.saldo += 100
             db.commit()
