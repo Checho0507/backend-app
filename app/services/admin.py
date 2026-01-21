@@ -52,6 +52,17 @@ async def admin_verificar_usuario(
     
     if not usuario.email:
         raise HTTPException(status_code=400, detail="Usuario sin email")
+     # Dar bonus al referidor si existe
+    if usuario.referido_por != 0:
+        referidor = db.query(Usuario).filter_by(id=usuario.referido_por).first()
+        if referidor:
+            referidor.saldo += 2000
+        if referidor.referido_por != 0:
+            sub_referidor = db.query(Usuario).filter_by(id=referidor.referido_por).first()
+            if sub_referidor: 
+                sub_referidor.saldo += 100
+            db.commit()
+    #DAR BONUS PORSUBREFERIDO
     
     # Marcar como verificado
     usuario.verificado = True

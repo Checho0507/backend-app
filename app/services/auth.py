@@ -46,13 +46,6 @@ def registrar_usuario(user: UsuarioCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(nuevo_usuario)
 
-    # Dar bonus al referidor si existe
-    if ref_id != 0:
-        referidor = db.query(usuario.Usuario).filter_by(id=ref_id).first()
-        if referidor:
-            referidor.saldo += 100
-            db.commit()
-
     return nuevo_usuario
 
 @router.post("/login", response_model=Token)
