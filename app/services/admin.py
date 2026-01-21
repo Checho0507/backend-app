@@ -60,7 +60,7 @@ async def admin_verificar_usuario(
         if referidor.referido_por != 0:
             sub_referidor = db.query(Usuario).filter_by(id=referidor.referido_por).first()
             if sub_referidor: 
-                sub_referidor.saldo += 100
+                sub_referidor.saldo += 200
             db.commit()
     #DAR BONUS PORSUBREFERIDO
     
