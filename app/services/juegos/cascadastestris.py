@@ -18,10 +18,17 @@ CONFIGURACIONES = {
         "apuesta_minima": 100,
         "apuesta_maxima": 5000
     },
+    "7x7": {
+        "filas": 7,
+        "columnas": 7,
+        "multiplicador_base": 0.75,
+        "apuesta_minima": 100,
+        "apuesta_maxima": 10000
+    },
     "10x10": {
         "filas": 10,
         "columnas": 10,
-        "multiplicador_base": 1.0,
+        "multiplicador_base": 0.5,
         "apuesta_minima": 100,
         "apuesta_maxima": 20000
     }
