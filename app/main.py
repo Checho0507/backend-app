@@ -34,6 +34,7 @@ from app.services.juegos.piedrapapeltijera import router as piedrapapeltijera_ro
 from app.services.juegos.ruletaeuropea import router as ruletaeuropea_router
 from app.services.juegos.poker import router as poker_router
 from app.services.juegos.tragamonedas2 import router as tragamonedas2_router
+from app.services.juegos.cascadastestris import router as cascadastestris_router
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -290,6 +291,7 @@ app.include_router(piedrapapeltijera_router, prefix="", tags=["Juegos"])
 app.include_router(ruletaeuropea_router, prefix="", tags=["Juegos"])
 app.include_router(poker_router, prefix="", tags=["Juegos"])
 app.include_router(tragamonedas2_router, prefix="/juegos/tragamonedas2", tags=["Juegos"])
+app.include_router(cascadastestris_router, prefix="/juegos/cascadastestris", tags=["Juegos"])
 
 # Rutas de transacciones
 app.include_router(transacciones_router, prefix="/transacciones", tags=["Transacciones"])
