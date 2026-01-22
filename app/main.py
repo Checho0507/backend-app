@@ -291,7 +291,7 @@ app.include_router(piedrapapeltijera_router, prefix="", tags=["Juegos"])
 app.include_router(ruletaeuropea_router, prefix="", tags=["Juegos"])
 app.include_router(poker_router, prefix="", tags=["Juegos"])
 app.include_router(tragamonedas2_router, prefix="/juegos/tragamonedas2", tags=["Juegos"])
-app.include_router(cascadastestris_router, prefix="/juegos/cascadastestris", tags=["Juegos"])
+app.include_router(cascadastestris_router, prefix="", tags=["Juegos"])
 
 # Rutas de transacciones
 app.include_router(transacciones_router, prefix="/transacciones", tags=["Transacciones"])
