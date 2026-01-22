@@ -1,3 +1,4 @@
+from decimal import Decimal
 import random
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
@@ -361,7 +362,7 @@ def jugar_cascadas(
         cascada_info["matriz_despues"] = [fila.copy() for fila in matriz]
     
     # Añadir ganancia total al saldo
-    usuario.saldo += ganancia_total
+    usuario.saldo += Decimal(ganancia_total)
 
     # Preparar respuesta
     if ganancia_total > 0:
