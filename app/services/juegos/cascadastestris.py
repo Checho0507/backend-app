@@ -21,7 +21,7 @@ CONFIGURACIONES = {
     "10x10": {
         "filas": 10,
         "columnas": 10,
-        "multiplicador_base": 2.0,  # Doble premio por ser más difícil
+        "multiplicador_base": 1.0,
         "apuesta_minima": 500,
         "apuesta_maxima": 20000
     }
