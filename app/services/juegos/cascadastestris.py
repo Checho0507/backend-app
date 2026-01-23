@@ -63,10 +63,10 @@ MULTIPLICADORES_COMBO = {
 BONUS_CASCADA = {
     1: 1.0,
     2: 1.2,
-    3: 1.5,
-    4: 2.0,
-    5: 3.0,
-    6: 5.0
+    3: 1.3,
+    4: 1.4,
+    5: 1.5,
+    6: 2.0
 }
 
 def generar_matriz(filas: int, columnas: int) -> List[List[str]]:
