@@ -327,8 +327,15 @@ def jugar_cascadas(
     todas_combinaciones = []
     
     while True:
+        min_combo = 0
         # Encontrar combinaciones
-        combinaciones = encontrar_combinaciones(matriz)
+        if (configuracion=="5x5"):
+            min_combo=3
+        if (configuracion=="7x7"):
+            min_combo=4
+        if (configuracion=="10x10"):
+            min_combo=5
+        combinaciones = encontrar_combinaciones(matriz, min_combo=min_combo)
         
         if not combinaciones:
             break
