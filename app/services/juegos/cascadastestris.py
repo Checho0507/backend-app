@@ -21,14 +21,14 @@ CONFIGURACIONES = {
     "7x7": {
         "filas": 7,
         "columnas": 7,
-        "multiplicador_base": 2,
+        "multiplicador_base": 1.5,
         "apuesta_minima": 100,
         "apuesta_maxima": 10000
     },
     "10x10": {
         "filas": 10,
         "columnas": 10,
-        "multiplicador_base": 3,
+        "multiplicador_base": 2.0,
         "apuesta_minima": 100,
         "apuesta_maxima": 20000
     }
