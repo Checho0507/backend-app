@@ -273,6 +273,7 @@ app.include_router(verify_router, prefix="/verificate", tags=["Verificación"])
 
 # Rutas de administración
 app.include_router(admin_router, prefix="/admin", tags=["Administración"])
+app.include_router(admin_router, prefix="/verificar", tags=["Verificación Manual"])
 
 # Rutas de VIP
 app.include_router(vip_router, prefix="/vip", tags=["VIP"])
