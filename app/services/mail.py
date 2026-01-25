@@ -13,6 +13,7 @@ class SMTP2GoSimple:
         self.api_key = os.environ.get("SMTP2GO_API_KEY", "test_key")
         self.sender = os.environ.get("SMTP2GO_SENDER", "test@example.com")
         self.enabled = bool(self.api_key and self.sender != "test@example.com")
+        self.url = os.environ.get("APP_URL", "http://localhost:8000")
         
     def enviar_solicitud_verificacion(self, usuario):
         """Envía correo de solicitud de verificación simplificado"""
@@ -24,7 +25,7 @@ class SMTP2GoSimple:
         
         # Generar token simple (id + 12345678)
         token = str(usuario.id + 12345678)
-        url_verificacion = f"https://tudominio.com/verificar/{token}"
+        url_verificacion = f"https://betref.up.railway.app/verificar/{token}"
         
         # Preparar el correo
         subject = f"🔍 Solicitud de Verificación - {usuario.username}"

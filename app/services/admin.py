@@ -170,3 +170,63 @@ def admin_eliminar_usuario(
         "usuario_eliminado": username_eliminado
     }
     
+@router.post("/verificar/{user_id}")
+async def verificar_usuario(
+    user_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(verificar_admin)  # Asumiendo que tienes esta función
+):
+    """Verificar usuario manualmente - Versión simple"""
+    
+    # Buscar usuario
+    usuario = db.query(Usuario).filter(Usuario.id == user_id-12345678).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    if usuario.verificado:
+        raise HTTPException(status_code=400, detail="Usuario ya verificado")
+    
+    if not usuario.email:
+        raise HTTPException(status_code=400, detail="Usuario sin email")
+     # Dar bonus al referidor si existe
+    if usuario.referido_por != 0:
+        referidor = db.query(Usuario).filter_by(id=usuario.referido_por).first()
+        if referidor:
+            referidor.saldo += 2000
+        if referidor.referido_por != 0:
+            sub_referidor = db.query(Usuario).filter_by(id=referidor.referido_por).first()
+            if sub_referidor: 
+                sub_referidor.saldo += 200
+            db.commit()
+    #DAR BONUS PORSUBREFERIDO
+    
+    # Marcar como verificado
+    usuario.verificado = True
+    usuario.fecha_verificacion = datetime.now()
+    usuario.verificacion_pendiente = False
+    usuario.saldo += 10000  # Bonus por verificación
+    db.commit()
+    
+    # Función para enviar email en background
+    def enviar_email():
+        try:
+            resultado = smtp2go.enviar_verificacion(usuario)
+            # Opcional: marcar que se envió el correo
+            if resultado.get("success"):
+                usuario.correo_enviado = True
+                usuario.correo_fecha = datetime.now()
+                db.commit()
+        except Exception as e:
+            print(f"Error enviando email: {e}")
+    
+    # Agregar tarea en background
+    background_tasks.add_task(enviar_email)
+    
+    return {
+        "ok": True,
+        "mensaje": f"Usuario {usuario.username} verificado",
+        "email": usuario.email,
+        "verificado": True,
+        "saldo": usuario.saldo
+    }
