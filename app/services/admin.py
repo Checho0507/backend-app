@@ -174,8 +174,7 @@ def admin_eliminar_usuario(
 async def verificar_usuario(
     user_id: int,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(verificar_admin)  # Asumiendo que tienes esta función
+    db: Session = Depends(get_db)
 ):
     """Verificar usuario manualmente - Versión simple"""
     
