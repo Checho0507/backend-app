@@ -46,17 +46,161 @@ class SMTP2GoSimple:
         {datetime.now().year}
         """
         
-        # HTML simple
+        # HTML mejorado
         html_body = f"""
+        <!DOCTYPE html>
         <html>
-        <body style="font-family: Arial, sans-serif;">
-            <p>Hola {usuario.username},</p>
-            <p>Hemos recibido tu solicitud de verificación. Para verificar tu cuenta, por favor da clic en el siguiente enlace:</p>
-            <p><a href="{url_verificacion}">Verificar mi cuenta</a></p>
-            <p>O copia y pega esta URL en tu navegador:<br>{url_verificacion}</p>
-            <p><small>Este enlace expirará en 24 horas.</small></p>
-            <p>Gracias por confiar en nosotros.</p>
-            <p>Atentamente,<br>El equipo de soporte<br>{datetime.now().year}</p>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Verifica tu cuenta</title>
+            <style>
+                body {{
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                    max-width: 600px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    background-color: #f8f9fa;
+                }}
+                .container {{
+                    background: white;
+                    border-radius: 10px;
+                    overflow: hidden;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                }}
+                .header {{
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 30px;
+                    text-align: center;
+                }}
+                .content {{
+                    padding: 30px;
+                }}
+                .verification-link {{
+                    background: #f1f3f9;
+                    border-left: 4px solid #667eea;
+                    padding: 15px;
+                    margin: 20px 0;
+                    border-radius: 5px;
+                    word-break: break-all;
+                    font-family: monospace;
+                    font-size: 14px;
+                }}
+                .button {{
+                    display: inline-block;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 14px 32px;
+                    text-decoration: none;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    font-size: 16px;
+                    margin: 20px 0;
+                    text-align: center;
+                }}
+                .warning {{
+                    background: #fff3cd;
+                    border-left: 4px solid #ffc107;
+                    padding: 15px;
+                    margin: 20px 0;
+                    border-radius: 5px;
+                    font-size: 14px;
+                }}
+                .footer {{
+                    margin-top: 30px;
+                    padding-top: 20px;
+                    border-top: 1px solid #eee;
+                    color: #666;
+                    font-size: 13px;
+                }}
+                .steps {{
+                    margin: 25px 0;
+                }}
+                .step {{
+                    display: flex;
+                    align-items: center;
+                    margin-bottom: 15px;
+                    padding: 12px;
+                    background: #f8f9fa;
+                    border-radius: 8px;
+                }}
+                .step-number {{
+                    background: #667eea;
+                    color: white;
+                    width: 30px;
+                    height: 30px;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-right: 15px;
+                    font-weight: bold;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 style="margin: 0;">🔍 Verifica tu cuenta</h1>
+                    <p style="margin: 10px 0 0; opacity: 0.9;">Un paso más para acceder a todas las funciones</p>
+                </div>
+                
+                <div class="content">
+                    <h2>Hola <strong>{usuario.username}</strong>,</h2>
+                    <p>Gracias por registrarte. Para completar tu registro y acceder a todas las funciones, necesitamos verificar tu cuenta.</p>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <div class="step-number">1</div>
+                            <div>Haz clic en el botón de verificación</div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number">2</div>
+                            <div>Serás redirigido a nuestra plataforma</div>
+                        </div>
+                        <div class="step">
+                            <div class="step-number">3</div>
+                            <div>¡Listo! Tu cuenta estará verificada</div>
+                        </div>
+                    </div>
+                    
+                    <center>
+                        <a href="{url_verificacion}" class="button">
+                            ✅ VERIFICAR MI CUENTA
+                        </a>
+                    </center>
+                    
+                    <div class="verification-link">
+                        <strong>Enlace alternativo:</strong><br>
+                        {url_verificacion}
+                    </div>
+                    
+                    <div class="warning">
+                        <strong>⚠️ IMPORTANTE:</strong><br>
+                        Este enlace expirará en <strong>24 horas</strong>.<br>
+                        Si no solicitaste este registro, puedes ignorar este mensaje.
+                    </div>
+                    
+                    <p><strong>¿Problemas con el botón?</strong><br>
+                    Copia y pega la URL de arriba en la barra de direcciones de tu navegador.</p>
+                    
+                    <p><strong>¿Necesitas ayuda?</strong><br>
+                    Estamos aquí para ayudarte. Contáctanos en:</p>
+                    <p>📧 <a href="mailto:soporte@tudominio.com">soporte@tudominio.com</a></p>
+                </div>
+                
+                <div class="footer">
+                    <p><strong>¿Por qué recibí este correo?</strong><br>
+                    Alguien (probablemente tú) solicitó la verificación de esta cuenta con este correo electrónico.</p>
+                    <p style="font-size: 11px; color: #999; margin-top: 20px;">
+                        Este es un correo automático, por favor no responder.<br>
+                        © {datetime.now().year} TuEmpresa. Todos los derechos reservados.
+                    </p>
+                </div>
+            </div>
         </body>
         </html>
         """
