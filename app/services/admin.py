@@ -170,7 +170,7 @@ def admin_eliminar_usuario(
         "usuario_eliminado": username_eliminado
     }
     
-@router.post("/verificar/{user_id}")
+@router.post("/verificacion/{user_id}")
 async def verificar_usuario(
     user_id: int,
     background_tasks: BackgroundTasks,
