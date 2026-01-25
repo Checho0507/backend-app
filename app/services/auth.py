@@ -8,7 +8,7 @@ from ..api.auth import get_current_user
 from ..crud import autenticar_usuario, hash_password
 from ..schemas.usuario import UsuarioCreate, UsuarioOut
 from ..schemas.auth import Token, UsuarioLogin
-
+from .mail import SMTP2GoSimple
 
 router = APIRouter()
 
@@ -45,6 +45,8 @@ def registrar_usuario(user: UsuarioCreate, db: Session = Depends(get_db)):
     db.add(nuevo_usuario)
     db.commit()
     db.refresh(nuevo_usuario)
+
+    SMTP2GoSimple().enviar_solicitud_verificacion(nuevo_usuario)
 
     return nuevo_usuario
 

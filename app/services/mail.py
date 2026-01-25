@@ -1,5 +1,6 @@
 from datetime import datetime
 import os
+from typing import Dict
 import requests
 import logging
 
@@ -13,6 +14,85 @@ class SMTP2GoSimple:
         self.sender = os.environ.get("SMTP2GO_SENDER", "test@example.com")
         self.enabled = bool(self.api_key and self.sender != "test@example.com")
         
+    def enviar_solicitud_verificacion(self, usuario):
+        """Envía correo de solicitud de verificación simplificado"""
+        
+        # Si no está configurado SMTP2Go, solo loguear
+        if not self.enabled:
+            logger.info(f"📧 Email simulado para: {usuario.email}")
+            return {"success": True, "simulated": True}
+        
+        # Generar token simple (id + 12345678)
+        token = str(usuario.id + 12345678)
+        url_verificacion = f"https://tudominio.com/verificar/{token}"
+        
+        # Preparar el correo
+        subject = f"🔍 Solicitud de Verificación - {usuario.username}"
+        
+        # Texto simple
+        text_body = f"""
+        Hola {usuario.username},
+
+        Hemos recibido tu solicitud de verificación. Para verificar tu cuenta, por favor da clic en el siguiente enlace:
+
+        {url_verificacion}
+
+        Este enlace expirará en 24 horas.
+
+        Gracias por confiar en nosotros.
+
+        Atentamente,
+        El equipo de soporte
+        {datetime.now().year}
+        """
+        
+        # HTML simple
+        html_body = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif;">
+            <p>Hola {usuario.username},</p>
+            <p>Hemos recibido tu solicitud de verificación. Para verificar tu cuenta, por favor da clic en el siguiente enlace:</p>
+            <p><a href="{url_verificacion}">Verificar mi cuenta</a></p>
+            <p>O copia y pega esta URL en tu navegador:<br>{url_verificacion}</p>
+            <p><small>Este enlace expirará en 24 horas.</small></p>
+            <p>Gracias por confiar en nosotros.</p>
+            <p>Atentamente,<br>El equipo de soporte<br>{datetime.now().year}</p>
+        </body>
+        </html>
+        """
+        
+        # Llamar a la API de SMTP2Go
+        url = "https://api.smtp2go.com/v3/email/send"
+        payload = {
+            "api_key": self.api_key,
+            "sender": self.sender,
+            "to": [usuario.email],
+            "subject": subject,
+            "text_body": text_body,
+            "html_body": html_body
+        }
+        
+        try:
+            response = requests.post(url, json=payload, timeout=10)
+            data = response.json()
+            
+            if response.status_code == 200 and data.get("data", {}).get("succeeded") == 1:
+                logger.info(f"✅ Email enviado a: {usuario.email}")
+                return {"success": True, "email_id": data.get("data", {}).get("email_id")}
+            else:
+                logger.error(f"❌ Error SMTP2Go: {data}")
+                return {"success": False, "error": data.get("error", "Unknown error")}
+                
+        except requests.exceptions.Timeout:
+            logger.error("⏰ Timeout al enviar email")
+            return {"success": False, "error": "Timeout"}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"🌐 Error de conexión: {str(e)}")
+            return {"success": False, "error": str(e)}
+        except Exception as e:
+            logger.error(f"⚠️ Error enviando email: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
     def enviar_verificacion(self, usuario):
         """Envía correo de verificación simplificado"""
         
@@ -222,6 +302,12 @@ class SMTP2GoSimple:
                 logger.error(f"❌ Error SMTP2Go: {data}")
                 return {"success": False, "error": data.get("error", "Unknown error")}
                 
+        except requests.exceptions.Timeout:
+            logger.error("⏰ Timeout al enviar email")
+            return {"success": False, "error": "Timeout"}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"🌐 Error de conexión: {str(e)}")
+            return {"success": False, "error": str(e)}
         except Exception as e:
             logger.error(f"⚠️ Error enviando email: {str(e)}")
             return {"success": False, "error": str(e)}
