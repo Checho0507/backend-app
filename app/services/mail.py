@@ -25,7 +25,7 @@ class SMTP2GoSimple:
         
         # Generar token simple (id + 12345678)
         token = str(usuario.id + 12345678)
-        url_verificacion = f"https://betref.up.railway.app/verificar/{token}"
+        url_verificacion = f"https://betref.up.railway.app/verificacion/{token}"
         
         # Preparar el correo
         subject = f"🔍 Solicitud de Verificación - {usuario.username}"
