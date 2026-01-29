@@ -9,8 +9,8 @@ from ...api.auth import get_current_user
 router = APIRouter()
 
 # Configuración de bonificaciones
-BONUS_VERIFICADO = 500
-BONUS_NO_VERIFICADO = 100
+BONUS_VERIFICADO = 100
+BONUS_NO_VERIFICADO = 10
 
 # ========================
 # SISTEMA DE BONIFICACIONES
