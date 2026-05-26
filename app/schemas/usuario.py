@@ -30,6 +30,7 @@ class UsuarioOut(BaseModel):
     verificado: bool
     verificacion_pendiente: bool
     referido_por: Optional[int] = None
+    pase_vip: Optional[str] = None
 
     class Config:
         orm_mode = True

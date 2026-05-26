@@ -16,6 +16,7 @@ class Usuario(Base):
     verificacion_pendiente = Column(Boolean, default=False)
     fecha_registro = Column(DateTime, default=datetime.utcnow)
     ultima_recompensa = Column(Date, nullable=True)
+    pase_vip = Column(String, nullable=True)  # None, 'PLATA', 'ORO', 'DIAMANTE'
 
     # Relaciones
     referidos = relationship("Usuario", backref="padrino", remote_side=[id])

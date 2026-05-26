@@ -14,6 +14,53 @@ router = APIRouter()
 
 ZONE = pytz.timezone("America/Bogota")
 
+# ============================================================
+# CONFIGURACIÓN DE PASES VIP
+# ============================================================
+
+NIVELES_VIP = {
+    None: {
+        "nombre": "Sin Pase",
+        "tasa": 50.0,
+        "costo_siguiente": 50000,
+        "siguiente": "PLATA",
+        "color": "gray",
+        "emoji": "⬜"
+    },
+    "PLATA": {
+        "nombre": "VIP Plata",
+        "tasa": 100.0,
+        "costo_siguiente": 100000,
+        "siguiente": "ORO",
+        "color": "silver",
+        "emoji": "🥈"
+    },
+    "ORO": {
+        "nombre": "VIP Oro",
+        "tasa": 200.0,
+        "costo_siguiente": 200000,
+        "siguiente": "DIAMANTE",
+        "color": "gold",
+        "emoji": "🥇"
+    },
+    "DIAMANTE": {
+        "nombre": "VIP Diamante",
+        "tasa": 300.0,
+        "costo_siguiente": None,
+        "siguiente": None,
+        "color": "cyan",
+        "emoji": "💎"
+    }
+}
+
+def obtener_tasa_por_vip(pase_vip):
+    """Retorna la tasa de interés anual según el nivel VIP del usuario"""
+    info = NIVELES_VIP.get(pase_vip)
+    if info:
+        return info["tasa"]
+    return 50.0
+
+
 def acumular_intereses(db: Session):
     """Función para acumular intereses en todas las inversiones activas"""
     ahora = datetime.today() + timedelta(hours=-5)
@@ -21,23 +68,120 @@ def acumular_intereses(db: Session):
     inversiones_activas = db.query(Inversion).filter(Inversion.activa == True).all()
     
     for inversion in inversiones_activas:
-        # Calcular segundos transcurridos desde el último cálculo o depósito
         fecha_inicio_calculo = inversion.fecha_ultimo_retiro_intereses or inversion.fecha_deposito
         dias_transcurridos = (ahora - fecha_inicio_calculo).days
         segundos_transcurridos = (ahora - fecha_inicio_calculo).seconds
         segundos_transcurridos += dias_transcurridos * 86400
         
-        # Calcular interés por segundo
         tasa_segundo = inversion.tasa_interes / 36500 / 86400
         interes_por_segundo = inversion.monto * tasa_segundo
         
-        # Interés acumulado en este período
         interes_acumulado = interes_por_segundo * segundos_transcurridos
         
-        # Actualizar interés acumulado en la inversión
         inversion.interes_acumulado = interes_acumulado
     
     db.commit()
+
+
+# ============================================================
+# ENDPOINTS VIP
+# ============================================================
+
+@router.get("/vip/info")
+def obtener_info_vip(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """Obtener información del pase VIP del usuario"""
+    usuario = db.query(Usuario).filter(Usuario.id == current_user.id).first()
+    pase = usuario.pase_vip
+    info_actual = NIVELES_VIP.get(pase, NIVELES_VIP[None])
+    
+    info_siguiente = None
+    if info_actual["siguiente"]:
+        info_siguiente = NIVELES_VIP.get(info_actual["siguiente"])
+        info_siguiente = {
+            "nivel": info_actual["siguiente"],
+            "nombre": info_siguiente["nombre"],
+            "tasa": info_siguiente["tasa"],
+            "costo": info_actual["costo_siguiente"],
+            "emoji": info_siguiente["emoji"]
+        }
+    
+    return {
+        "pase_vip": pase,
+        "nivel_actual": {
+            "nivel": pase,
+            "nombre": info_actual["nombre"],
+            "tasa": info_actual["tasa"],
+            "emoji": info_actual["emoji"],
+            "color": info_actual["color"]
+        },
+        "nivel_siguiente": info_siguiente,
+        "saldo_usuario": float(usuario.saldo),
+        "puede_subir": (
+            info_actual["costo_siguiente"] is not None and
+            float(usuario.saldo) >= info_actual["costo_siguiente"]
+        )
+    }
+
+
+@router.post("/vip/comprar")
+def comprar_pase_vip(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """Comprar o subir de nivel el pase VIP"""
+    usuario = db.query(Usuario).filter(Usuario.id == current_user.id).first()
+    pase_actual = usuario.pase_vip
+    info_actual = NIVELES_VIP.get(pase_actual, NIVELES_VIP[None])
+    
+    if info_actual["siguiente"] is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Ya tienes el pase VIP máximo (Diamante)"
+        )
+    
+    costo = info_actual["costo_siguiente"]
+    siguiente_nivel = info_actual["siguiente"]
+    
+    if float(usuario.saldo) < costo:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Saldo insuficiente. Necesitas ${costo:,.0f} para obtener el pase {siguiente_nivel}"
+        )
+    
+    nueva_tasa = NIVELES_VIP[siguiente_nivel]["tasa"]
+    
+    usuario.saldo -= Decimal(costo)
+    usuario.pase_vip = siguiente_nivel
+    
+    inversiones_activas = db.query(Inversion).filter(
+        and_(
+            Inversion.usuario_id == usuario.id,
+            Inversion.activa == True
+        )
+    ).all()
+    for inv in inversiones_activas:
+        inv.tasa_interes = nueva_tasa
+    
+    db.commit()
+    db.refresh(usuario)
+    
+    info_nuevo = NIVELES_VIP[siguiente_nivel]
+    return {
+        "success": True,
+        "message": f"🎉 ¡Felicitaciones! Ahora eres {info_nuevo['emoji']} {info_nuevo['nombre']} con {nueva_tasa:.0f}% anual",
+        "nuevo_nivel": siguiente_nivel,
+        "nueva_tasa": nueva_tasa,
+        "nuevo_saldo": float(usuario.saldo),
+        "inversiones_actualizadas": len(inversiones_activas)
+    }
+
+
+# ============================================================
+# ENDPOINTS DE INVERSIÓN
+# ============================================================
 
 @router.post("/inversion/depositar")
 def depositar_inversion(
@@ -48,14 +192,12 @@ def depositar_inversion(
     """Realizar un depósito en la inversión"""
     monto = Decimal(data.get("monto", 0))
     
-    # Validar monto
     if monto < 50000 or monto > 5000000:
         raise HTTPException(
             status_code=400, 
             detail="El monto debe estar entre $50,000 y $5,000,000"
         )
     
-    # Verificar saldo del usuario
     usuario = db.query(Usuario).filter(Usuario.id == current_user.id).first()
     if usuario.saldo < monto:
         raise HTTPException(
@@ -63,22 +205,21 @@ def depositar_inversion(
             detail="Saldo insuficiente para realizar la inversión"
         )
     
-    # Calcular fechas de retiro + 19 horas
+    tasa = obtener_tasa_por_vip(usuario.pase_vip)
+    
     ahora = datetime.today() + timedelta(hours=-5)
     proximo_retiro_intereses = ahora + timedelta(days=30)
     proximo_retiro_capital = ahora + timedelta(days=180)
     
-    # Descontar del saldo del usuario
     usuario.saldo -= monto
     
-    # Crear registro de inversión
     nueva_inversion = Inversion(
         usuario_id=usuario.id,
         monto=monto,
         fecha_deposito=ahora,
         fecha_proximo_retiro_intereses=proximo_retiro_intereses,
         fecha_proximo_retiro_capital=proximo_retiro_capital,
-        tasa_interes=300.0
+        tasa_interes=tasa
     )
     
     db.add(nueva_inversion)
@@ -88,12 +229,14 @@ def depositar_inversion(
     
     return {
         "success": True,
-        "message": f"✅ Inversión de ${monto:,.0f} realizada con éxito",
+        "message": f"✅ Inversión de ${monto:,.0f} realizada con éxito al {tasa:.0f}% anual",
         "nuevo_saldo": Decimal(usuario.saldo),
         "inversion_id": nueva_inversion.id,
+        "tasa_interes": tasa,
         "proximo_retiro_intereses": proximo_retiro_intereses.isoformat(),
         "proximo_retiro_capital": proximo_retiro_capital.isoformat()
     }
+
 
 @router.get("/inversion/estado")
 def obtener_estado_inversion(
@@ -103,7 +246,6 @@ def obtener_estado_inversion(
     """Obtener estado actual de las inversiones del usuario"""
     ahora = datetime.today() + timedelta(hours=-5)
     
-    # Obtener todas las inversiones activas del usuario
     inversiones = db.query(Inversion).filter(
         and_(
             Inversion.usuario_id == current_user.id,
@@ -118,24 +260,19 @@ def obtener_estado_inversion(
     detalles_inversiones = []
     
     for inversion in inversiones:
-        # Calcular segundos transcurridos
         segundos_transcurridos = (ahora - inversion.fecha_deposito).seconds
         
-        # Calcular interés por segundo
         tasa_segundo = inversion.tasa_interes / 36500 / 86400
         interes_por_segundo = inversion.monto * tasa_segundo
         
-        # Interés acumulado desde el inicio o último retiro
         fecha_inicio_calculo = inversion.fecha_ultimo_retiro_intereses or inversion.fecha_deposito
         dias_transcurridos = (ahora - fecha_inicio_calculo).days
         segundos_transcurridos = (ahora - fecha_inicio_calculo).seconds
         segundos_transcurridos += dias_transcurridos * 86400
         interes_acumulado_desde_retiro = interes_por_segundo * segundos_transcurridos
         
-        # Interés total acumulado
-        interes_total =interes_acumulado_desde_retiro
+        interes_total = interes_acumulado_desde_retiro
         
-        # Verificar si puede retirar intereses
         puede_retirar_intereses = ahora >= inversion.fecha_proximo_retiro_intereses
         puede_retirar_capital = ahora >= inversion.fecha_proximo_retiro_capital
         
@@ -150,6 +287,7 @@ def obtener_estado_inversion(
             "fecha_deposito": inversion.fecha_deposito,
             "interes_acumulado": Decimal(interes_total),
             "interes_diario": Decimal(interes_por_segundo * 86400),
+            "tasa_interes": inversion.tasa_interes,
             "puede_retirar_intereses": puede_retirar_intereses,
             "puede_retirar_capital": puede_retirar_capital,
             "fecha_proximo_retiro_intereses": inversion.fecha_proximo_retiro_intereses,
@@ -166,6 +304,7 @@ def obtener_estado_inversion(
         "inversiones": detalles_inversiones,
         "timestamp": ahora.isoformat()
     }
+
 
 @router.post("/inversion/retirar/intereses")
 def retirar_intereses(
@@ -189,7 +328,6 @@ def retirar_intereses(
     
     ahora = datetime.today() + timedelta(hours=-5)
     
-    # Verificar si puede retirar intereses
     if ahora < inversion.fecha_proximo_retiro_intereses:
         dias_faltantes = (inversion.fecha_proximo_retiro_intereses - ahora).days
         raise HTTPException(
@@ -197,7 +335,6 @@ def retirar_intereses(
             detail=f"Debes esperar {dias_faltantes} días para retirar intereses"
         )
     
-    # Calcular interés acumulado
     fecha_inicio_calculo = inversion.fecha_ultimo_retiro_intereses or inversion.fecha_deposito
     dias_transcurridos = (ahora - fecha_inicio_calculo).days
     segundos_transcurridos = (ahora - fecha_inicio_calculo).seconds
@@ -209,11 +346,9 @@ def retirar_intereses(
     if interes_acumulado <= 0:
         raise HTTPException(status_code=400, detail="No hay intereses acumulados para retirar")
     
-    # Actualizar saldo del usuario
     usuario = db.query(Usuario).filter(Usuario.id == current_user.id).first()
     usuario.saldo += Decimal(interes_acumulado)
     
-    # Registrar retiro
     retiro = RetiroInversion(
         inversion_id=inversion.id,
         tipo="intereses",
@@ -225,7 +360,6 @@ def retirar_intereses(
         }
     )
     
-    # Actualizar inversión
     inversion.interes_acumulado = 0
     inversion.fecha_ultimo_retiro_intereses = ahora
     inversion.fecha_proximo_retiro_intereses = ahora + timedelta(days=30)
@@ -241,6 +375,7 @@ def retirar_intereses(
         "nuevo_saldo": Decimal(usuario.saldo),
         "proximo_retiro_intereses": inversion.fecha_proximo_retiro_intereses.isoformat()
     }
+
 
 @router.post("/inversion/retirar/capital")
 def retirar_capital(
@@ -264,7 +399,6 @@ def retirar_capital(
     
     ahora = datetime.today() + timedelta(hours=-5)
     
-    # Verificar si puede retirar capital
     if ahora < inversion.fecha_proximo_retiro_capital:
         dias_faltantes = (inversion.fecha_proximo_retiro_capital - ahora).days
         raise HTTPException(
@@ -272,21 +406,17 @@ def retirar_capital(
             detail=f"Debes esperar {dias_faltantes} días para retirar el capital"
         )
     
-    # Calcular intereses finales
     fecha_inicio_calculo = inversion.fecha_ultimo_retiro_intereses or inversion.fecha_deposito
     dias_desde_ultimo_retiro = (ahora - fecha_inicio_calculo).days
     tasa_diaria = inversion.tasa_interes / 36500
     interes_diario = inversion.monto * tasa_diaria
     interes_final = interes_diario * dias_desde_ultimo_retiro
     
-    # Monto total a retirar (capital + intereses finales)
     monto_total = inversion.monto + interes_final
     
-    # Actualizar saldo del usuario
     usuario = db.query(Usuario).filter(Usuario.id == current_user.id).first()
     usuario.saldo += Decimal(monto_total)
     
-    # Registrar retiro
     retiro = RetiroInversion(
         inversion_id=inversion.id,
         tipo="capital",
@@ -299,7 +429,6 @@ def retirar_capital(
         }
     )
     
-    # Marcar inversión como inactiva
     inversion.activa = False
     inversion.fecha_ultimo_retiro_capital = ahora
     
@@ -315,6 +444,7 @@ def retirar_capital(
         "total_retirado": Decimal(monto_total),
         "nuevo_saldo": Decimal(usuario.saldo)
     }
+
 
 @router.get("/inversion/historial")
 def obtener_historial_inversion(

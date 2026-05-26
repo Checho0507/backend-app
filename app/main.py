@@ -106,6 +106,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️  Advertencia al crear tablas: {e}")
     
+    # Migración: agregar columna pase_vip si no existe
+    try:
+        from app.database import SessionLocal
+        db_migrate = SessionLocal()
+        try:
+            from sqlalchemy import text as sql_text
+            db_migrate.execute(sql_text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS pase_vip VARCHAR"))
+            db_migrate.commit()
+            print("✅ Columna pase_vip verificada/creada en usuarios")
+        except Exception as e:
+            db_migrate.rollback()
+            print(f"⚠️  Columna pase_vip ya existe o error menor: {e}")
+        finally:
+            db_migrate.close()
+    except Exception as e:
+        print(f"⚠️  Advertencia en migración pase_vip: {e}")
+    
     # Configurar y arrancar el scheduler
     try:
         # Programar sorteo diario a las 23:59 hora Colombia
