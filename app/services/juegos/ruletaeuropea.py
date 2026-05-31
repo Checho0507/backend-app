@@ -26,7 +26,7 @@ TIPOS_APUESTA = {
     "numero_pleno": {"multiplicador": 35, "descripcion": "Apuesta a un número exacto"},
     "docena": {"multiplicador": 2, "descripcion": "Apuesta a una docena (1-12, 13-24, 25-36)"},
     "columna": {"multiplicador": 2, "descripcion": "Apuesta a una columna"},
-    "rojo_negro": {"multipliccionador": 2, "descripcion": "Apuesta a color rojo o negro"},
+    "rojo_negro": {"multiplicador": 2, "descripcion": "Apuesta a color rojo o negro"},
     "par_impar": {"multiplicador": 2, "descripcion": "Apuesta a par o impar"},
     "bajo_alto": {"multiplicador": 2, "descripcion": "Apuesta a bajo (1-18) o alto (19-36)"}
 }

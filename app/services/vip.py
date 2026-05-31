@@ -19,9 +19,11 @@ from ..schemas.resultado_sorteo import GanadorOut, ResultadoSorteoOut
 
 router = APIRouter()
 
-ZONE = pytz.timezone("America/Bogota")  # Hora Colombia
+ZONE = pytz.timezone("America/Bogota")
 NEXT_DRAW = None
-sorteo_en_proceso = False  # Variable para prevenir ejecuciones simultáneas
+sorteo_en_proceso = False
+
+TOTAL_SLOTS = 100  # Siempre 100 números en el sorteo
 
 
 def calcular_proximo_sorteo():
@@ -42,54 +44,44 @@ def obtener_fichas_por_costo(costo: float) -> int:
     elif costo == 100000:
         return 25
     else:
-        return 1  # Por defecto
+        return 1
 
 
 def verificar_y_ejecutar_sorteo_automatico(db: Session):
-    """Verifica si es hora del sorteo y lo ejecuta automáticamente"""
+    """Verifica si es hora del sorteo y lo ejecuta automáticamente.
+    Siempre registra el resultado, incluso si no hay participantes."""
     global NEXT_DRAW, sorteo_en_proceso
-    
+
     if sorteo_en_proceso:
         return None
-    
+
     now_local = datetime.now(ZONE)
-    
-    # Si no hay próxima fecha o ya pasó el tiempo, ejecutar sorteo
+
     if NEXT_DRAW is None or now_local >= NEXT_DRAW:
         try:
             sorteo_en_proceso = True
             print(f"🕒 Hora del sorteo automático: {now_local}")
-            
-            # Verificar si hay participantes
-            participantes_activos = db.query(ParticipanteSorteo).filter(
-                ParticipanteSorteo.es_activo == True
-            ).count()
-            
-            if participantes_activos == 0:
-                print("⚠️ No hay participantes para el sorteo automático")
-                NEXT_DRAW = calcular_proximo_sorteo()
-                return None
-            
-            # Ejecutar sorteo
+
             resultado = realizar_sorteo(db)
-            
-            # Programar próximo sorteo
+
             NEXT_DRAW = calcular_proximo_sorteo()
             print(f"✅ Sorteo automático ejecutado. Próximo sorteo: {NEXT_DRAW}")
-            
+
             return resultado
-            
+
         except Exception as e:
             print(f"❌ Error en sorteo automático: {str(e)}")
+            NEXT_DRAW = calcular_proximo_sorteo()
             return None
         finally:
             sorteo_en_proceso = False
-    
+
     return None
 
 
 def realizar_sorteo(db: Session):
-    """Función principal para realizar el sorteo (reutilizable)"""
+    """Realiza el sorteo con 100 slots numerados.
+    Siempre registra el resultado, aunque no haya participantes o nadie gane."""
     try:
         # Obtener todos los participantes activos con sus fichas
         participantes_query = db.query(
@@ -108,91 +100,100 @@ def realizar_sorteo(db: Session):
             Usuario.verificado,
             Usuario.saldo
         ).all()
-        
-        if not participantes_query:
-            raise HTTPException(status_code=400, detail="No hay participantes en el sorteo")
 
-        # Crear lista de participantes con duplicación según fichas
-        lista_para_sorteo = []
+        total_participantes = len(participantes_query)
+        print(f"🎰 Participantes en el sorteo: {total_participantes}")
+
+        # Construir los 100 slots: cada posición puede estar vacía (None) o pertenecer a un usuario
+        slots = [None] * TOTAL_SLOTS
+        slot_actual = 0
+
         for p in participantes_query:
-            # Agregar el usuario_id tantas veces como fichas tenga
-            for _ in range(p.total_fichas):
-                lista_para_sorteo.append({
-                    "id": p.usuario_id,
-                    "username": p.username,
-                    "verificado": p.verificado,
-                    "saldo": p.saldo
-                })
-        
-        total_fichas = len(lista_para_sorteo)
-        print(f"🎰 Total de fichas en juego: {total_fichas}")
-        
-        # Seleccionar ganador
-        ganador_data = random.choice(lista_para_sorteo)
-        numero_ganador = ganador_data["id"]
-        print(f"🎰 Número ganador generado: {numero_ganador}")
-        
-        # Buscar todos los usuarios que coincidan
-        usuarios_ganadores = []
-        ganadores_info = []
-        
-        for p in participantes_query:
-            if p.usuario_id == numero_ganador:
-                usuario_db = db.query(Usuario).filter(Usuario.id == p.usuario_id).first()
-                if usuario_db:
-                    saldo_anterior = usuario_db.saldo
-                    premio = Decimal(500000)
-                    usuario_db.saldo += premio
-                    usuarios_ganadores.append(usuario_db)
-                    
-                    ganadores_info.append({
+            fichas_disponibles = min(int(p.total_fichas), TOTAL_SLOTS - slot_actual)
+            for _ in range(fichas_disponibles):
+                if slot_actual < TOTAL_SLOTS:
+                    slots[slot_actual] = {
                         "id": p.usuario_id,
                         "username": p.username,
-                        "saldo": float(usuario_db.saldo),
                         "verificado": p.verificado,
-                        "premio": float(premio),
-                        "saldo_anterior": float(saldo_anterior),
-                        "fichas": p.total_fichas
-                    })
-                    print(f"💰 Ganador encontrado: {p.username} con {p.total_fichas} fichas")
-        
+                        "saldo": float(p.saldo)
+                    }
+                    slot_actual += 1
+
+        fichas_ocupadas = slot_actual
+        print(f"🎰 Slots ocupados: {fichas_ocupadas}/{TOTAL_SLOTS}")
+
+        # Sorteo: elegir número entre 1 y 100
+        numero_sorteado = random.randint(1, TOTAL_SLOTS)
+        ganador_data = slots[numero_sorteado - 1]  # None si el slot está vacío
+
+        print(f"🎰 Número sorteado: {numero_sorteado} — Slot: {'OCUPADO' if ganador_data else 'VACÍO'}")
+
         fecha_bogota = datetime.now(ZONE)
-        
-        # Crear registro del resultado
+        ganadores_info = []
+
+        if ganador_data is not None:
+            # Hay ganador
+            usuario_db = db.query(Usuario).filter(Usuario.id == ganador_data["id"]).first()
+            if usuario_db:
+                saldo_anterior = float(usuario_db.saldo)
+                premio = Decimal(500000)
+                usuario_db.saldo += premio
+
+                ganadores_info.append({
+                    "id": ganador_data["id"],
+                    "username": ganador_data["username"],
+                    "saldo": float(usuario_db.saldo),
+                    "verificado": ganador_data["verificado"],
+                    "premio": float(premio),
+                    "saldo_anterior": saldo_anterior,
+                    "fichas": next(
+                        (int(p.total_fichas) for p in participantes_query if p.usuario_id == ganador_data["id"]),
+                        0
+                    )
+                })
+                print(f"💰 Ganador: {ganador_data['username']} — Premio: $500,000")
+        else:
+            print(f"⚠️ Número {numero_sorteado} cayó en slot vacío — Nadie ganó este sorteo")
+
+        # Crear registro del resultado (SIEMPRE se guarda)
         resultado = ResultadoSorteo(
             fecha=fecha_bogota,
-            numero_ganador=str(numero_ganador),
+            numero_ganador=str(numero_sorteado),
             ganadores=json.dumps(ganadores_info, ensure_ascii=False),
-            total_participantes=len(participantes_query),
+            total_participantes=total_participantes,
             total_ganadores=len(ganadores_info)
         )
-        
+
         db.add(resultado)
         db.flush()
-        
-        # Actualizar participantes con el sorteo_id y marcar como inactivos
-        db.query(ParticipanteSorteo).filter(
-            ParticipanteSorteo.es_activo == True
-        ).update({
-            "sorteo_id": resultado.id,
-            "es_activo": False
-        })
-        
+
+        # Marcar todos los participantes activos como inactivos y asignarles el sorteo
+        if total_participantes > 0:
+            db.query(ParticipanteSorteo).filter(
+                ParticipanteSorteo.es_activo == True
+            ).update({
+                "sorteo_id": resultado.id,
+                "es_activo": False
+            })
+
         db.commit()
-        
-        # Refrescar usuarios ganadores
-        for usuario in usuarios_ganadores:
-            db.refresh(usuario)
-        
-        print(f"✅ Resultado guardado en BD - ID: {resultado.id}")
-        print(f"📊 Total participantes: {len(participantes_query)} | Total fichas: {total_fichas} | Ganadores: {len(ganadores_info)}")
-        
+
+        if ganadores_info:
+            usuario_ganador = db.query(Usuario).filter(Usuario.id == ganadores_info[0]["id"]).first()
+            if usuario_ganador:
+                db.refresh(usuario_ganador)
+
+        print(f"✅ Resultado guardado — ID: {resultado.id} | Número: {numero_sorteado} | Ganadores: {len(ganadores_info)}")
+
         return {
             "success": True,
-            "numero_ganador": numero_ganador,
+            "numero_ganador": numero_sorteado,
+            "hay_ganador": len(ganadores_info) > 0,
             "ganadores": ganadores_info,
-            "total_participantes": len(participantes_query),
-            "total_fichas": total_fichas,
+            "total_participantes": total_participantes,
+            "fichas_ocupadas": fichas_ocupadas,
+            "total_slots": TOTAL_SLOTS,
             "total_ganadores": len(ganadores_info),
             "fecha_sorteo": fecha_bogota.isoformat()
         }
@@ -232,36 +233,49 @@ def participar_sorteo_vip(
             ParticipanteSorteo.es_activo == True
         )
     ).first()
-    
+
     if participacion_existente:
         raise HTTPException(status_code=400, detail="Ya estás inscrito en el sorteo VIP actual")
 
-    # Calcular fichas
     fichas = obtener_fichas_por_costo(costo_vip)
 
-    # Descontar saldo
+    # Verificar que aún hay slots disponibles (máx 100)
+    fichas_actuales = db.query(func.sum(ParticipanteSorteo.fichas)).filter(
+        ParticipanteSorteo.es_activo == True
+    ).scalar() or 0
+
+    if fichas_actuales + fichas > TOTAL_SLOTS:
+        slots_restantes = TOTAL_SLOTS - fichas_actuales
+        raise HTTPException(
+            status_code=400,
+            detail=f"No hay suficientes slots disponibles. Quedan {slots_restantes} de {TOTAL_SLOTS}."
+        )
+
     usuario.saldo -= costo_vip
     db.commit()
 
-    # Crear registro de participante
     participante = ParticipanteSorteo(
         usuario_id=usuario.id,
         costo=costo_vip,
         fichas=fichas,
         fecha_participacion=datetime.utcnow(),
-        sorteo_id=1,
+        sorteo_id=None,
         es_activo=True
     )
-    
+
     db.add(participante)
     db.commit()
     db.refresh(usuario)
     db.refresh(participante)
 
+    slots_restantes_post = TOTAL_SLOTS - (fichas_actuales + fichas)
+
     return {
-        "mensaje": f"Te has inscrito correctamente al sorteo VIP 🎉 Se descontaron ${costo_vip} por {fichas} ficha(s).",
+        "mensaje": f"✅ ¡Inscrito al sorteo VIP! Se descontaron ${int(costo_vip):,} por {fichas} ficha(s). Ocupas los slots {int(fichas_actuales)+1}–{int(fichas_actuales)+fichas} de {TOTAL_SLOTS}.",
         "nuevo_saldo": float(usuario.saldo),
         "fichas_obtenidas": fichas,
+        "slots_asignados": f"{int(fichas_actuales)+1}–{int(fichas_actuales)+fichas}",
+        "slots_restantes": slots_restantes_post,
         "id_participacion": participante.id
     }
 
@@ -275,7 +289,7 @@ def listar_participantes_vip(
     participantes = db.query(Usuario).join(
         ParticipanteSorteo, ParticipanteSorteo.usuario_id == Usuario.id
     ).filter(ParticipanteSorteo.es_activo == True).all()
-    
+
     return participantes
 
 
@@ -298,7 +312,7 @@ def listar_participantes_detalle(
     ).group_by(
         Usuario.id, Usuario.username, Usuario.verificado
     ).all()
-    
+
     return [
         {
             "id": p.id,
@@ -318,7 +332,7 @@ def resolver_sorteo(db: Session = Depends(get_db)):
         resultado = realizar_sorteo(db)
         global NEXT_DRAW
         NEXT_DRAW = calcular_proximo_sorteo()
-        
+
         return JSONResponse({
             **resultado,
             "proximo_sorteo": NEXT_DRAW.isoformat()
@@ -333,19 +347,16 @@ def resolver_sorteo(db: Session = Depends(get_db)):
 def get_next_draw(db: Session = Depends(get_db)):
     """Obtener información del próximo sorteo"""
     global NEXT_DRAW
-    
-    # Verificar y ejecutar sorteo automático si es la hora
+
     verificar_y_ejecutar_sorteo_automatico(db)
-    
-    # Si NEXT_DRAW no está definido o ya pasó, calcular próximo
+
     if NEXT_DRAW is None or datetime.now(ZONE) >= NEXT_DRAW:
         NEXT_DRAW = calcular_proximo_sorteo()
-    
-    # Contar participantes activos y fichas
+
     total_participantes = db.query(ParticipanteSorteo).filter(
         ParticipanteSorteo.es_activo == True
     ).count()
-    
+
     total_fichas = db.query(func.sum(ParticipanteSorteo.fichas)).filter(
         ParticipanteSorteo.es_activo == True
     ).scalar() or 0
@@ -353,7 +364,9 @@ def get_next_draw(db: Session = Depends(get_db)):
     return {
         "next_draw": NEXT_DRAW.isoformat(),
         "participantes_actuales": total_participantes,
-        "fichas_actuales": total_fichas,
+        "fichas_actuales": int(total_fichas),
+        "slots_disponibles": TOTAL_SLOTS - int(total_fichas),
+        "total_slots": TOTAL_SLOTS,
         "timezone": "America/Bogota"
     }
 
@@ -405,12 +418,11 @@ def limpiar_participantes(
 ):
     """Limpiar todos los participantes activos (solo admin)"""
     try:
-        # Marcar todos los participantes activos como inactivos
         db.query(ParticipanteSorteo).filter(
             ParticipanteSorteo.es_activo == True
         ).update({"es_activo": False})
         db.commit()
-        
+
         return {"mensaje": "Todos los participantes han sido limpiados", "success": True}
     except Exception as e:
         db.rollback()

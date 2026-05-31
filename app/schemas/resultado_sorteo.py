@@ -1,7 +1,7 @@
-# app/schemas/resultado_sorteo.py
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
+
 
 class GanadorOut(BaseModel):
     id: int
@@ -14,12 +14,15 @@ class GanadorOut(BaseModel):
     class Config:
         from_attributes = True
 
+
 class ResultadoSorteoOut(BaseModel):
     id: int
     fecha: datetime
-    numero_ganador: int
-    ganadores: List[GanadorOut]
-    
+    numero_ganador: str
+    ganadores: List[GanadorOut] = []
+    total_participantes: int = 0
+    total_ganadores: int = 0
+
     class Config:
         from_attributes = True
         json_encoders = {
