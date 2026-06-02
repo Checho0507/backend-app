@@ -1,11 +1,16 @@
+"""
+Poker Texas Hold'em vs Banca — Rewrite completo.
+Evaluación correcta de las 9 jugadas usando combinaciones C(7,5).
+"""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from decimal import Decimal
 import random
 import uuid
-from typing import Dict, List, Tuple, Optional
-from enum import Enum
+from collections import Counter
+from datetime import datetime, timedelta
+from decimal import Decimal
+from itertools import combinations
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -17,713 +22,545 @@ from ...api.auth import get_current_user
 
 router = APIRouter()
 
-# ----------------------------------------------------------------------
-# Configuración de Póker
-# ----------------------------------------------------------------------
+# ─────────────────────────── Configuración ────────────────────────────
+APUESTAS_PERMITIDAS = [500, 1000, 2500, 5000, 10000]
+BLINDS_DISPONIBLES  = [25, 50, 100, 200]
+MAX_HORAS_SESION    = 2
 
-APUESTAS_PERMITIDAS = [200, 500, 1000, 2500, 5000, 10000]
-BLINDS = [10, 25, 50, 100, 200, 500]
-MAX_HORAS_SESION = 2
+# ─────────────────────────── Baraja ───────────────────────────────────
+VALORES  = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"]
+NUM      = {"2":2,"3":3,"4":4,"5":5,"6":6,"7":7,"8":8,"9":9,"10":10,"J":11,"Q":12,"K":13,"A":14}
+PALOS    = ["♠","♥","♦","♣"]
+PALO_EMOJI = {"♠":"♠️","♥":"♥️","♦":"♦️","♣":"♣️"}
 
+def _nueva_baraja() -> List[dict]:
+    b = [{"v": v, "p": p, "n": NUM[v]} for p in PALOS for v in VALORES]
+    random.shuffle(b)
+    return b
 
-# ----------------------------------------------------------------------
-# Enums y estructuras
-# ----------------------------------------------------------------------
+def _c(c: dict) -> dict:
+    """Convierte carta interna al formato JSON para el frontend."""
+    return {"valor": c["v"], "palo": PALO_EMOJI[c["p"]], "valor_numerico": c["n"]}
 
-class Palo(Enum):
-    CORAZONES = "♥️"
-    DIAMANTES = "♦️"
-    TREBOLES = "♣️"
-    PICAS = "♠️"
+# ─────────────────────────── Evaluador de mano ───────────────────────
+# Rangos de mano (mayor = mejor)
+CARTA_ALTA    = 1
+PAR           = 2
+DOBLE_PAR     = 3
+TRIO          = 4
+ESCALERA      = 5
+COLOR         = 6
+FULL_HOUSE    = 7
+POKER_4       = 8
+ESC_COLOR     = 9
+ESC_REAL      = 10
 
+NOMBRE = {
+    CARTA_ALTA:  "Carta Alta",
+    PAR:         "Par",
+    DOBLE_PAR:   "Doble Par",
+    TRIO:        "Trío",
+    ESCALERA:    "Escalera",
+    COLOR:       "Color",
+    FULL_HOUSE:  "Full House",
+    POKER_4:     "Póker (Cuatro Iguales)",
+    ESC_COLOR:   "Escalera de Color",
+    ESC_REAL:    "Escalera Real",
+}
 
-class ValorCarta(Enum):
-    DOS = ("2", 2)
-    TRES = ("3", 3)
-    CUATRO = ("4", 4)
-    CINCO = ("5", 5)
-    SEIS = ("6", 6)
-    SIETE = ("7", 7)
-    OCHO = ("8", 8)
-    NUEVE = ("9", 9)
-    DIEZ = ("10", 10)
-    JOTA = ("J", 11)
-    REINA = ("Q", 12)
-    REY = ("K", 13)
-    AS = ("A", 14)
+def _evaluar5(cartas: List[dict]) -> Tuple[int, List[int]]:
+    """Evalúa EXACTAMENTE 5 cartas. Devuelve (rango, [desempate...])."""
+    vals  = sorted([c["n"] for c in cartas], reverse=True)
+    palos = [c["p"] for c in cartas]
 
+    es_color   = len(set(palos)) == 1
+    unicos     = sorted(set(vals), reverse=True)
 
-class AccionJugador(Enum):
-    PASAR = "pasar"
-    IGUALAR = "igualar"
-    SUBIR = "subir"
-    RETIRARSE = "retirarse"
+    def _straight_top(vs: List[int]) -> Optional[int]:
+        u = sorted(set(vs), reverse=True)
+        for i in range(len(u) - 4):
+            if u[i] - u[i+4] == 4:
+                return u[i]
+        # rueda A-2-3-4-5
+        if 14 in u and {2,3,4,5}.issubset(set(u)):
+            return 5
+        return None
 
+    top_str = _straight_top(vals)
+    es_esc   = top_str is not None
 
-class ManoPoker(Enum):
-    ESCALERA_REAL = 10
-    ESCALERA_COLOR = 9
-    POKER = 8
-    FULL_HOUSE = 7
-    COLOR = 6
-    ESCALERA = 5
-    TRIO = 4
-    DOBLE_PAR = 3
-    PAR = 2
-    CARTA_ALTA = 1
+    cnt    = Counter(vals)
+    grupos = sorted(cnt.items(), key=lambda x: (x[1], x[0]), reverse=True)
 
+    # Escalera Real
+    if es_color and es_esc and set(vals) == {10,11,12,13,14}:
+        return ESC_REAL, [14]
 
-class EstadoPartida(Enum):
-    PRE_FLOP = "pre_flop"
-    FLOP = "flop"
-    TURN = "turn"
-    RIVER = "river"
-    SHOWDOWN = "showdown"
-    TERMINADA = "terminada"
+    # Escalera de Color
+    if es_color and es_esc:
+        return ESC_COLOR, [top_str]
 
+    # Póker (cuatro iguales)
+    if grupos[0][1] == 4:
+        v4  = grupos[0][0]
+        kik = max(v for v in vals if v != v4)
+        return POKER_4, [v4, kik]
 
-# ----------------------------------------------------------------------
-# Modelos
-# ----------------------------------------------------------------------
+    # Full House
+    if grupos[0][1] == 3 and len(grupos) >= 2 and grupos[1][1] >= 2:
+        return FULL_HOUSE, [grupos[0][0], grupos[1][0]]
 
-class CartaPoker:
-    __slots__ = ("valor", "palo")
+    # Color
+    if es_color:
+        return COLOR, vals[:5]
 
-    def __init__(self, valor: ValorCarta, palo: Palo):
-        self.valor = valor
-        self.palo = palo
+    # Escalera
+    if es_esc:
+        if top_str == 5 and 14 in vals:
+            return ESCALERA, [5,4,3,2,1]
+        return ESCALERA, [top_str, top_str-1, top_str-2, top_str-3, top_str-4]
 
-    def __repr__(self):
-        return f"{self.valor.value[0]}{self.palo.value}"
+    # Trío
+    if grupos[0][1] == 3:
+        v3   = grupos[0][0]
+        kiks = sorted([v for v in vals if v != v3], reverse=True)[:2]
+        return TRIO, [v3] + kiks
 
-    def valor_numerico(self) -> int:
-        return self.valor.value[1]
+    # Doble Par
+    pares = [v for v,c in cnt.items() if c == 2]
+    if len(pares) >= 2:
+        p1,p2 = sorted(pares, reverse=True)[:2]
+        kik   = max(v for v in vals if v != p1 and v != p2)
+        return DOBLE_PAR, [p1, p2, kik]
 
-    def nombre(self) -> str:
-        return self.valor.value[0]
+    # Par
+    if len(pares) == 1:
+        p    = pares[0]
+        kiks = sorted([v for v in vals if v != p], reverse=True)[:3]
+        return PAR, [p] + kiks
 
-
-class JugadorPoker:
-    __slots__ = ("usuario_id", "cartas", "fichas", "esta_en_juego", "ultima_accion", "fichas_iniciales")
-
-    def __init__(self, usuario_id: int, fichas_iniciales: int):
-        self.usuario_id = usuario_id
-        self.cartas: List[CartaPoker] = []
-        self.fichas = fichas_iniciales
-        self.fichas_iniciales = fichas_iniciales
-        self.esta_en_juego = True
-        self.ultima_accion: Optional[str] = None
-
-    def recibir_cartas(self, cartas: List[CartaPoker]):
-        self.cartas = cartas
-
-    def retirar(self):
-        self.esta_en_juego = False
-        self.ultima_accion = "retirarse"
-
-    def puede_jugar(self) -> bool:
-        return self.esta_en_juego
-
-    def pagar(self, cantidad: int) -> bool:
-        if cantidad < 0:
-            return False
-        if cantidad > self.fichas:
-            return False
-        self.fichas -= cantidad
-        return True
-
-    def total_apostado(self) -> int:
-        return self.fichas_iniciales - self.fichas
-
-
-class MesaPoker:
-    __slots__ = (
-        "cartas_comunitarias",
-        "bote",
-        "ronda_actual",
-        "small_blind",
-        "big_blind",
-        # apuestas por calle
-        "current_bet",
-        "bets",  # [jugador, banca] lo puesto en ESTA calle
-        # control 1 acción por ronda
-        "jugador_actuo_en_calle",
-        "banca_actuo_en_calle",
-    )
-
-    def __init__(self, small_blind: int = 10):
-        self.cartas_comunitarias: List[CartaPoker] = []
-        self.bote = 0
-        self.ronda_actual = EstadoPartida.PRE_FLOP
-        self.small_blind = small_blind
-        self.big_blind = small_blind * 2
-
-        self.current_bet = 0
-        self.bets = [0, 0]  # 0 jugador, 1 banca
-
-        self.jugador_actuo_en_calle = False
-        self.banca_actuo_en_calle = False
-
-    def reset_calle(self):
-        self.current_bet = 0
-        self.bets = [0, 0]
-        self.jugador_actuo_en_calle = False
-        self.banca_actuo_en_calle = False
-
-    def to_call(self, idx: int) -> int:
-        return max(0, self.current_bet - self.bets[idx])
-
-    def meter_al_bote(self, cantidad: int):
-        self.bote += cantidad
+    # Carta Alta
+    return CARTA_ALTA, vals[:5]
 
 
+def mejor_mano(pool: List[dict]) -> Tuple[int, List[int]]:
+    """Mejor mano posible de 5 cartas sacadas de `pool` (hasta 7)."""
+    if len(pool) < 5:
+        # todavía no hay suficientes cartas; evaluación parcial
+        return _evaluar5(pool + [{"v":"2","p":"♠","n":2}] * (5 - len(pool)))
+    mejor_r, mejor_t = -1, []
+    for combo in combinations(pool, 5):
+        r, t = _evaluar5(list(combo))
+        if r > mejor_r or (r == mejor_r and t > mejor_t):
+            mejor_r, mejor_t = r, t
+    return mejor_r, mejor_t
+
+
+# ─────────────────────────── Sesión de juego ─────────────────────────
 class SesionPoker:
-    __slots__ = ("session_id", "mesa", "baraja", "usuario_id", "apuesta_inicial", "created_at", "estado", "banca_id", "jugador", "banca")
+    def __init__(self, session_id: str, usuario_id: int, apuesta: int, blind: int):
+        self.session_id  = session_id
+        self.usuario_id  = usuario_id
+        self.apuesta_ini = apuesta
+        self.created_at  = datetime.now()
 
-    def __init__(self, session_id: str, usuario_id: int, apuesta: int, blind: int, banca_id: int = 0):
-        self.session_id = session_id
-        self.usuario_id = usuario_id
-        self.apuesta_inicial = apuesta
-        self.created_at = datetime.now()
-        self.estado = "activa"
-        self.banca_id = banca_id
+        self.blind     = blind          # small blind
+        self.big_blind = blind * 2
 
-        self.mesa = MesaPoker(small_blind=blind)
-        self.baraja = self.crear_baraja()
-        random.shuffle(self.baraja)
+        # Baraja y reparto
+        self.baraja: List[dict] = _nueva_baraja()
+        self.cartas_j: List[dict] = [self.baraja.pop(), self.baraja.pop()]
+        self.cartas_b: List[dict] = [self.baraja.pop(), self.baraja.pop()]
+        self.comun:    List[dict] = []
 
-        self.jugador = JugadorPoker(usuario_id, apuesta)
-        self.banca = JugadorPoker(banca_id, apuesta * 2)
+        # Fichas (cada uno con el buy-in)
+        self.fichas_j = apuesta
+        self.fichas_b = apuesta
 
-        self.repartir_cartas_privadas()
-        self.procesar_blinds()
+        # Estado
+        self.ronda = "pre_flop"          # pre_flop | flop | turn | river | showdown
+        self.terminada = False
 
-    def crear_baraja(self) -> List[CartaPoker]:
-        return [CartaPoker(valor, palo) for palo in Palo for valor in ValorCarta]
+        # Apuestas de la calle actual
+        self.bet_j    = 0   # lo que el jugador aportó esta calle
+        self.bet_b    = 0
+        self.nivel    = 0   # apuesta máxima vigente (to-call level)
+        self.bote     = 0
 
-    def repartir_cartas_privadas(self):
-        self.jugador.recibir_cartas([self.baraja.pop(), self.baraja.pop()])
-        self.banca.recibir_cartas([self.baraja.pop(), self.baraja.pop()])
+        # ¿Quién ha actuado esta calle?
+        self.actuo_j  = False
+        self.actuo_b  = False
 
-    def procesar_blinds(self):
-        # Heads-up simplificado: banca paga BB, jugador no paga SB (si quieres, aquí puedes cobrar SB también)
-        bb = min(self.mesa.big_blind, self.banca.fichas)
-        if not self.banca.pagar(bb):
-            bb = 0
-        self.mesa.bets[1] += bb
-        self.mesa.meter_al_bote(bb)
-        self.mesa.current_bet = bb
+        # Última acción de la banca (para mostrar al jugador)
+        self.ultima_acc_b = ""
 
-    def repartir_comunitarias(self, n: int):
-        for _ in range(n):
-            self.mesa.cartas_comunitarias.append(self.baraja.pop())
+        # Blinds: jugador = SB, banca = BB
+        sb = min(blind, self.fichas_j)
+        bb = min(self.big_blind, self.fichas_b)
+        self.fichas_j -= sb
+        self.fichas_b -= bb
+        self.bet_j = sb
+        self.bet_b = bb
+        self.bote  = sb + bb
+        self.nivel = bb   # para igualar el BB
 
-    # -------- Evaluación mano (tu lógica, con pequeños ajustes) --------
+    # ── Auxiliares ──────────────────────────────────────────────────
+    def to_call_j(self) -> int:
+        return max(0, self.nivel - self.bet_j)
 
-    def evaluar_mano(self, cartas: List[CartaPoker]) -> Tuple[ManoPoker, List[int]]:
-        valores = sorted([c.valor_numerico() for c in cartas], reverse=True)
-        palos = [c.palo for c in cartas]
+    def to_call_b(self) -> int:
+        return max(0, self.nivel - self.bet_b)
 
-        conteo_palos: Dict[Palo, int] = {}
-        for p in palos:
-            conteo_palos[p] = conteo_palos.get(p, 0) + 1
+    def _reset_calle(self):
+        self.bet_j   = 0
+        self.bet_b   = 0
+        self.nivel   = 0
+        self.actuo_j = False
+        self.actuo_b = False
 
-        conteo_valores: Dict[int, int] = {}
-        for v in valores:
-            conteo_valores[v] = conteo_valores.get(v, 0) + 1
+    def _avanzar_ronda(self):
+        self._reset_calle()
+        orden = ["pre_flop","flop","turn","river","showdown"]
+        idx = orden.index(self.ronda)
+        self.ronda = orden[idx + 1]
+        if self.ronda == "flop":
+            self.comun += [self.baraja.pop(), self.baraja.pop(), self.baraja.pop()]
+        elif self.ronda in ("turn", "river"):
+            self.comun.append(self.baraja.pop())
 
-        valores_ordenados = sorted(conteo_valores.items(), key=lambda x: (x[1], x[0]), reverse=True)
+    def _pagar_j(self, cantidad: int) -> int:
+        pago = min(cantidad, self.fichas_j)
+        self.fichas_j -= pago
+        self.bet_j    += pago
+        self.nivel     = max(self.nivel, self.bet_j)
+        self.bote     += pago
+        return pago
 
-        # Escalera real
-        valores_especiales = {10, 11, 12, 13, 14}
-        for palo in Palo:
-            vals = {c.valor_numerico() for c in cartas if c.palo == palo}
-            if valores_especiales.issubset(vals):
-                return ManoPoker.ESCALERA_REAL, [14, 13, 12, 11, 10]
+    def _pagar_b(self, cantidad: int) -> int:
+        pago = min(cantidad, self.fichas_b)
+        self.fichas_b -= pago
+        self.bet_b    += pago
+        self.nivel     = max(self.nivel, self.bet_b)
+        self.bote     += pago
+        return pago
 
-        # Color (flush) candidate
-        flush_palo = None
-        for p, cnt in conteo_palos.items():
-            if cnt >= 5:
-                flush_palo = p
-                break
+    # ── IA de la banca ──────────────────────────────────────────────
+    def _banca_actua(self):
+        """
+        Banca actúa una vez por calle.
+        Estrategia: evalúa su mano actual y decide pasar/igualar/subir.
+        Nunca se retira (es la casa).
+        """
+        pool_b = self.cartas_b + self.comun
+        rango_b, _ = mejor_mano(pool_b) if pool_b else (CARTA_ALTA, [])
 
-        # Escalera (con As bajo)
-        def hay_escalera(valset: List[int]) -> Optional[List[int]]:
-            u = sorted(set(valset), reverse=True)
-            for i in range(len(u) - 4):
-                if u[i] - u[i + 4] == 4:
-                    return u[i:i+5]
-            if 14 in u:
-                u2 = [x for x in u if x != 14] + [1]
-                u2 = sorted(set(u2), reverse=True)
-                for i in range(len(u2) - 4):
-                    if u2[i] - u2[i + 4] == 4:
-                        return u2[i:i+5]
-            return None
+        tc = self.to_call_b()
 
-        # Escalera color
-        if flush_palo is not None:
-            vals_flush = [c.valor_numerico() for c in cartas if c.palo == flush_palo]
-            straight_flush = hay_escalera(vals_flush)
-            if straight_flush:
-                return ManoPoker.ESCALERA_COLOR, straight_flush
-
-        # Poker
-        if any(cnt == 4 for cnt in conteo_valores.values()):
-            v4 = max(v for v, cnt in conteo_valores.items() if cnt == 4)
-            kicker = max(v for v in valores if v != v4)
-            return ManoPoker.POKER, [v4, kicker]
-
-        # Full house
-        if len(valores_ordenados) >= 2 and valores_ordenados[0][1] >= 3 and valores_ordenados[1][1] >= 2:
-            return ManoPoker.FULL_HOUSE, [valores_ordenados[0][0], valores_ordenados[1][0]]
-
-        # Color
-        if flush_palo is not None:
-            vals_flush = sorted([c.valor_numerico() for c in cartas if c.palo == flush_palo], reverse=True)
-            return ManoPoker.COLOR, vals_flush[:5]
-
-        # Escalera
-        straight = hay_escalera(valores)
-        if straight:
-            return ManoPoker.ESCALERA, straight
-
-        # Trio
-        if any(cnt == 3 for cnt in conteo_valores.values()):
-            v3 = max(v for v, cnt in conteo_valores.items() if cnt == 3)
-            kickers = sorted([v for v in valores if v != v3], reverse=True)[:2]
-            return ManoPoker.TRIO, [v3] + kickers
-
-        # Pares
-        pares = sorted([v for v, cnt in conteo_valores.items() if cnt == 2], reverse=True)
-        if len(pares) >= 2:
-            kicker = max(v for v in valores if v not in pares[:2])
-            return ManoPoker.DOBLE_PAR, pares[:2] + [kicker]
-        if len(pares) == 1:
-            p = pares[0]
-            kickers = sorted([v for v in valores if v != p], reverse=True)[:3]
-            return ManoPoker.PAR, [p] + kickers
-
-        return ManoPoker.CARTA_ALTA, valores[:5]
-
-
-# ----------------------------------------------------------------------
-# Utilidades
-# ----------------------------------------------------------------------
-
-def limpiar_sesiones_expiradas():
-    now = datetime.now()
-    expiradas = []
-    for sid, sdata in list(game_sessions.items()):
-        if isinstance(sdata, SesionPoker):
-            if now - sdata.created_at > timedelta(hours=MAX_HORAS_SESION):
-                expiradas.append(sid)
+        if tc == 0:
+            # puede pasar o apostar
+            if rango_b >= TRIO or (rango_b >= PAR and random.random() < 0.5):
+                apuesta = max(self.big_blind, int(self.bote * 0.5))
+                apuesta = min(apuesta, self.fichas_b)
+                if apuesta > 0:
+                    self._pagar_b(apuesta)
+                    self.ultima_acc_b = f"Banca apuesta ${apuesta}"
+                else:
+                    self.ultima_acc_b = "Banca pasa"
+            else:
+                self.ultima_acc_b = "Banca pasa"
         else:
-            created = sdata.get("created_at", now)
-            if now - created > timedelta(hours=MAX_HORAS_SESION):
-                expiradas.append(sid)
-    for sid in expiradas:
+            # tiene que pagar para ver
+            if rango_b >= DOBLE_PAR and random.random() < 0.4:
+                # sube
+                extra = max(self.big_blind, tc)
+                total = tc + extra
+                total = min(total, self.fichas_b)
+                self._pagar_b(total)
+                self.ultima_acc_b = f"Banca iguala y sube ${total}"
+            else:
+                # iguala
+                pagado = self._pagar_b(tc)
+                self.ultima_acc_b = f"Banca iguala ${pagado}"
+
+        self.actuo_b = True
+
+
+# ─────────────────────────── Helpers ──────────────────────────────────
+def _get_sesion(session_id: str, user_id: int) -> SesionPoker:
+    if session_id not in game_sessions:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    s = game_sessions[session_id]
+    if not isinstance(s, SesionPoker):
+        raise HTTPException(status_code=400, detail="Sesión inválida")
+    if s.usuario_id != user_id:
+        raise HTTPException(status_code=403, detail="Sin acceso")
+    return s
+
+
+def _limpiar_expiradas():
+    ahora = datetime.now()
+    for sid in [k for k,v in list(game_sessions.items())
+                if isinstance(v, SesionPoker)
+                and ahora - v.created_at > timedelta(hours=MAX_HORAS_SESION)]:
         del game_sessions[sid]
 
 
-def obtener_sesion_poker(session_id: str, user_id: int) -> SesionPoker:
-    if session_id not in game_sessions:
-        raise HTTPException(status_code=404, detail="Sesión de póker no encontrada")
-    sesion = game_sessions[session_id]
-    if not isinstance(sesion, SesionPoker):
-        raise HTTPException(status_code=400, detail="ID de sesión inválido")
-    if sesion.usuario_id != user_id:
-        raise HTTPException(status_code=403, detail="No tienes acceso a esta sesión")
-    return sesion
+def _estado_base(s: SesionPoker) -> dict:
+    return {
+        "fichas_jugador":    s.fichas_j,
+        "fichas_banca":      s.fichas_b,
+        "bote":              s.bote,
+        "apuesta_minima":    s.to_call_j(),
+        "ronda_actual":      s.ronda,
+        "estado":            s.ronda,
+        "cartas_comunitarias": [_c(c) for c in s.comun],
+        "accion_banca":      s.ultima_acc_b,
+        "small_blind":       s.blind,
+        "big_blind":         s.big_blind,
+    }
 
 
-def carta_a_dict(carta: CartaPoker) -> dict:
-    return {"valor": carta.nombre(), "palo": carta.palo.value, "valor_numerico": carta.valor_numerico()}
+def _resolver_showdown(s: SesionPoker, db: Session, user) -> dict:
+    pool_j = s.cartas_j + s.comun
+    pool_b = s.cartas_b + s.comun
+
+    rango_j, des_j = mejor_mano(pool_j)
+    rango_b, des_b = mejor_mano(pool_b)
+
+    nombre_j = NOMBRE[rango_j]
+    nombre_b = NOMBRE[rango_b]
+
+    bote = s.bote
+    ganancia = 0
+
+    if rango_j > rango_b or (rango_j == rango_b and des_j > des_b):
+        # Jugador gana
+        ganancia_neta = bote - s.apuesta_ini
+        user.saldo += Decimal(bote)
+        resultado = f"🏆 ¡Ganaste con {nombre_j} vs {nombre_b}! +${ganancia_neta:,}"
+        ganancia = ganancia_neta
+    elif rango_b > rango_j or (rango_b == rango_j and des_b > des_j):
+        # Banca gana
+        resultado = f"❌ La banca gana con {nombre_b} vs {nombre_j}"
+        ganancia = -s.apuesta_ini
+    else:
+        # Empate: devolver buy-in
+        user.saldo += Decimal(s.apuesta_ini)
+        resultado = f"🤝 Empate con {nombre_j}. Recuperas tu buy-in."
+        ganancia = 0
+
+    db.commit()
+    db.refresh(user)
+    del game_sessions[s.session_id]
+
+    return {
+        "resultado":           resultado,
+        "ganancia":            ganancia,
+        "nuevo_saldo":         float(user.saldo),
+        "bote_final":          bote,
+        "estado":              "terminada",
+        "cartas_banca":        [_c(c) for c in s.cartas_b],
+        "cartas_comunitarias": [_c(c) for c in s.comun],
+        "mano_jugador":        nombre_j,
+        "mano_banca":          nombre_b,
+        "fichas_jugador":      s.fichas_j,
+        "fichas_banca":        s.fichas_b,
+        "bote":                bote,
+        "apuesta_minima":      0,
+        "ronda_actual":        "showdown",
+    }
 
 
-def nombre_mano(m: ManoPoker) -> str:
-    return m.name.replace("_", " ").title()
-
-
-# ----------------------------------------------------------------------
-# Endpoints
-# ----------------------------------------------------------------------
+# ─────────────────────────── Endpoints ───────────────────────────────
 
 @router.get("/juegos/poker/apuestas-permitidas")
-def leer_apuestas_permitidas():
+def get_apuestas():
     return {"apuestas_permitidas": APUESTAS_PERMITIDAS}
 
 
 @router.get("/juegos/poker/blinds")
-def leer_blinds():
-    return {"blinds_disponibles": BLINDS}
+def get_blinds():
+    return {"blinds_disponibles": BLINDS_DISPONIBLES}
 
 
 @router.post("/juegos/poker/iniciar")
 def iniciar_poker(
-    apuesta: int = Query(..., description="Buy-in inicial", ge=1),
-    blind: int = Query(25, description="Tamaño del blind pequeño"),
-    db: Session = Depends(get_db),
+    apuesta: int = Query(..., ge=1),
+    blind:   int = Query(25),
+    db:      Session = Depends(get_db),
     current_user: usuario.Usuario = Depends(get_current_user),
 ):
-    limpiar_sesiones_expiradas()
+    _limpiar_expiradas()
 
     if apuesta not in APUESTAS_PERMITIDAS:
-        raise HTTPException(status_code=400, detail=f"Apuesta no válida. Debe ser una de {APUESTAS_PERMITIDAS}")
-
-    if blind not in BLINDS:
-        raise HTTPException(status_code=400, detail=f"Blind no válido. Debe ser uno de {BLINDS}")
+        raise HTTPException(400, f"Apuesta inválida. Opciones: {APUESTAS_PERMITIDAS}")
+    if blind not in BLINDS_DISPONIBLES:
+        blind = BLINDS_DISPONIBLES[0]
 
     user = db.query(usuario.Usuario).filter(usuario.Usuario.id == current_user.id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-
+        raise HTTPException(404, "Usuario no encontrado")
     if user.saldo < apuesta:
-        raise HTTPException(status_code=400, detail=f"Saldo insuficiente. Necesitas ${apuesta} para jugar.")
+        raise HTTPException(400, f"Saldo insuficiente. Necesitas ${apuesta:,}")
 
     user.saldo -= Decimal(apuesta)
     db.commit()
     db.refresh(user)
 
-    session_id = str(uuid.uuid4())
-    sesion = SesionPoker(session_id, user.id, apuesta, blind=blind)
-
-    game_sessions[session_id] = sesion
+    sid     = str(uuid.uuid4())
+    sesion  = SesionPoker(sid, user.id, apuesta, blind)
+    game_sessions[sid] = sesion
 
     return {
-        "session_id": session_id,
-        "cartas_jugador": [carta_a_dict(c) for c in sesion.jugador.cartas],
-        "fichas_jugador": sesion.jugador.fichas,
-        "fichas_banca": sesion.banca.fichas,
-        "bote": sesion.mesa.bote,
-        "apuesta_minima": sesion.mesa.to_call(0),  # lo que te falta para igualar
-        "ronda_actual": sesion.mesa.ronda_actual.value,
-        "small_blind": sesion.mesa.small_blind,
-        "big_blind": sesion.mesa.big_blind,
-        "nuevo_saldo": user.saldo,
+        "session_id":          sid,
+        "cartas_jugador":      [_c(c) for c in sesion.cartas_j],
+        "fichas_jugador":      sesion.fichas_j,
+        "fichas_banca":        sesion.fichas_b,
+        "bote":                sesion.bote,
+        "apuesta_minima":      sesion.to_call_j(),
+        "ronda_actual":        sesion.ronda,
+        "estado":              sesion.ronda,
+        "small_blind":         sesion.blind,
+        "big_blind":           sesion.big_blind,
+        "nuevo_saldo":         float(user.saldo),
         "cartas_comunitarias": [],
-        "estado": sesion.mesa.ronda_actual.value,
     }
-
-
-def _avanzar_calle(s: SesionPoker):
-    if s.mesa.ronda_actual == EstadoPartida.PRE_FLOP:
-        s.mesa.ronda_actual = EstadoPartida.FLOP
-        s.repartir_comunitarias(3)
-    elif s.mesa.ronda_actual == EstadoPartida.FLOP:
-        s.mesa.ronda_actual = EstadoPartida.TURN
-        s.repartir_comunitarias(1)
-    elif s.mesa.ronda_actual == EstadoPartida.TURN:
-        s.mesa.ronda_actual = EstadoPartida.RIVER
-        s.repartir_comunitarias(1)
-    elif s.mesa.ronda_actual == EstadoPartida.RIVER:
-        s.mesa.ronda_actual = EstadoPartida.SHOWDOWN
-
-    s.mesa.reset_calle()
-
-
-def _resolver_showdown(s: SesionPoker, db: Session, user: usuario.Usuario):
-    mano_j, vals_j = s.evaluar_mano(s.jugador.cartas + s.mesa.cartas_comunitarias)
-    mano_b, vals_b = s.evaluar_mano(s.banca.cartas + s.mesa.cartas_comunitarias)
-
-    resultado = ""
-    ganancia = 0
-
-    if mano_j.value > mano_b.value:
-        resultado = f"¡Ganaste con {nombre_mano(mano_j)}!"
-        ganancia = s.mesa.bote - s.jugador.total_apostado()
-        if ganancia > 0:
-            user.saldo += Decimal(ganancia)
-    elif mano_b.value > mano_j.value:
-        resultado = f"La banca gana con {nombre_mano(mano_b)}."
-        ganancia = -s.jugador.total_apostado()
-    else:
-        # desempate por kickers
-        ganador = None
-        for vj, vb in zip(vals_j, vals_b):
-            if vj > vb:
-                ganador = "jugador"
-                break
-            if vb > vj:
-                ganador = "banca"
-                break
-
-        if ganador == "jugador":
-            resultado = f"¡Ganaste con {nombre_mano(mano_j)} (carta más alta)!"
-            ganancia = s.mesa.bote - s.jugador.total_apostado()
-            if ganancia > 0:
-                user.saldo += Decimal(ganancia)
-        elif ganador == "banca":
-            resultado = f"La banca gana con {nombre_mano(mano_b)} (carta más alta)."
-            ganancia = -s.jugador.total_apostado()
-        else:
-            resultado = "¡Empate! El bote se divide."
-            mitad = s.mesa.bote // 2
-            ganancia = mitad - s.jugador.total_apostado()
-            if ganancia > 0:
-                user.saldo += Decimal(ganancia)
-
-    db.commit()
-    db.refresh(user)
-
-    bote_final = s.mesa.bote
-    s.mesa.bote = 0
-    s.estado = "terminada"
-
-    del game_sessions[s.session_id]
-
-    return {
-        "resultado": resultado,
-        "ganancia": ganancia,
-        "nuevo_saldo": user.saldo,
-        "bote_final": bote_final,
-        "estado": "terminada",
-        "cartas_banca": [carta_a_dict(c) for c in s.banca.cartas],
-        "cartas_comunitarias": [carta_a_dict(c) for c in s.mesa.cartas_comunitarias],
-        "mano_jugador": nombre_mano(mano_j),
-        "mano_banca": nombre_mano(mano_b),
-    }
-
-
-def _accion_banca(s: SesionPoker):
-    # banca solo actúa una vez por calle
-    if s.mesa.banca_actuo_en_calle or not s.banca.puede_jugar():
-        return "espera", 0
-
-    idx_b = 1
-    to_call = s.mesa.to_call(idx_b)
-
-    # fuerza aproximada con cartas visibles (privadas + comunitarias)
-    mano_b, _ = s.evaluar_mano(s.banca.cartas + s.mesa.cartas_comunitarias)
-    fuerza = mano_b.value
-
-    accion = "pasar"
-    cantidad_total_aporte = 0
-
-    if to_call == 0:
-        # puede pasar o apostar (subir desde 0)
-        if fuerza >= ManoPoker.PAR.value and random.random() < 0.45:
-            # apuesta "razonable"
-            raise_amount = max(s.mesa.big_blind, 10)
-            raise_amount = min(raise_amount, s.banca.fichas)
-            if raise_amount > 0:
-                s.banca.pagar(raise_amount)
-                s.mesa.bets[idx_b] += raise_amount
-                s.mesa.current_bet = max(s.mesa.current_bet, s.mesa.bets[idx_b])
-                s.mesa.meter_al_bote(raise_amount)
-                accion = "subir"
-                cantidad_total_aporte = raise_amount
-            else:
-                accion = "pasar"
-        else:
-            accion = "pasar"
-    else:
-        # hay apuesta: igualar o subir (nunca se retira)
-        if fuerza >= ManoPoker.PAR.value and random.random() < 0.35:
-            # subir: paga to_call + raise_extra
-            raise_extra = max(s.mesa.big_blind, to_call)  # sube al menos una ciega
-            total = to_call + raise_extra
-            total = min(total, s.banca.fichas)
-            if total > 0:
-                s.banca.pagar(total)
-                s.mesa.bets[idx_b] += total
-                s.mesa.current_bet = max(s.mesa.current_bet, s.mesa.bets[idx_b])
-                s.mesa.meter_al_bote(total)
-                accion = "subir"
-                cantidad_total_aporte = total
-            else:
-                accion = "igualar"
-        else:
-            pago = min(to_call, s.banca.fichas)
-            if pago > 0:
-                s.banca.pagar(pago)
-                s.mesa.bets[idx_b] += pago
-                s.mesa.meter_al_bote(pago)
-            accion = "igualar"
-            cantidad_total_aporte = pago
-
-    s.mesa.banca_actuo_en_calle = True
-    s.banca.ultima_accion = accion
-    return accion, cantidad_total_aporte
 
 
 @router.post("/juegos/poker/{session_id}/accion")
-def realizar_accion(
+def accion_poker(
     session_id: str,
-    accion: str = Query(..., description="Acción a realizar"),
-    cantidad: int = Query(0, description="Cantidad total a aportar en la acción (para subir)"),
-    db: Session = Depends(get_db),
+    accion:     str = Query(...),
+    cantidad:   int = Query(0, ge=0),
+    db:         Session = Depends(get_db),
     current_user: usuario.Usuario = Depends(get_current_user),
 ):
-    limpiar_sesiones_expiradas()
-    s = obtener_sesion_poker(session_id, current_user.id)
+    _limpiar_expiradas()
+    s = _get_sesion(session_id, current_user.id)
+
+    if s.terminada:
+        raise HTTPException(400, "La partida ya terminó")
+    if s.actuo_j:
+        raise HTTPException(400, "Ya realizaste tu acción en esta ronda")
 
     user = db.query(usuario.Usuario).filter(usuario.Usuario.id == current_user.id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        raise HTTPException(404, "Usuario no encontrado")
 
-    if s.estado == "terminada":
-        raise HTTPException(status_code=400, detail="La partida ya terminó")
+    accion = accion.lower().strip()
 
-    if not s.jugador.puede_jugar():
-        raise HTTPException(status_code=400, detail="El jugador ya se retiró")
-
-    if s.mesa.jugador_actuo_en_calle:
-        raise HTTPException(status_code=400, detail="Ya realizaste una acción en esta ronda")
-
-    # normalizar acción
-    try:
-        a = AccionJugador(accion)
-    except Exception:
-        raise HTTPException(status_code=400, detail=f"Acción '{accion}' no válida")
-
-    idx_j = 0
-    to_call = s.mesa.to_call(idx_j)
-
-    # ---- acción jugador (1 por calle) ----
-    if a == AccionJugador.RETIRARSE:
-        s.jugador.retirar()
-        s.estado = "terminada"
-        bote_final = s.mesa.bote
-        s.mesa.bote = 0
-        ganancia = -s.jugador.total_apostado()
-
+    # ── Acción del jugador ──────────────────────────────────────────
+    if accion == "retirarse":
+        # Jugador se retira: pierde lo apostado en el bote
+        ganancia  = -s.apuesta_ini
+        bote_final = s.bote
         del game_sessions[session_id]
         return {
-            "resultado": "Te retiraste. La banca gana el bote.",
-            "ganancia": ganancia,
-            "nuevo_saldo": user.saldo,
-            "bote_final": bote_final,
-            "estado": "terminada",
-            "cartas_banca": [carta_a_dict(c) for c in s.banca.cartas],
-            "cartas_comunitarias": [carta_a_dict(c) for c in s.mesa.cartas_comunitarias],
-            "mano_jugador": "Retirarse",
-            "mano_banca": "",
+            "resultado":           "Te retiraste. La banca gana el bote.",
+            "ganancia":            ganancia,
+            "nuevo_saldo":         float(user.saldo),
+            "bote_final":          bote_final,
+            "estado":              "terminada",
+            "cartas_banca":        [_c(c) for c in s.cartas_b],
+            "cartas_comunitarias": [_c(c) for c in s.comun],
+            "mano_jugador":        "Se retiró",
+            "mano_banca":          "",
+            "fichas_jugador":      s.fichas_j,
+            "fichas_banca":        s.fichas_b,
+            "bote":                bote_final,
+            "apuesta_minima":      0,
+            "ronda_actual":        s.ronda,
         }
 
-    if a == AccionJugador.PASAR:
-        if to_call != 0:
-            raise HTTPException(status_code=400, detail="No puedes pasar: tienes una apuesta pendiente para igualar")
-        s.jugador.ultima_accion = "pasar"
-        s.mesa.jugador_actuo_en_calle = True
+    elif accion == "pasar":
+        tc = s.to_call_j()
+        if tc > 0:
+            raise HTTPException(400, f"No puedes pasar: hay una apuesta de ${tc:,} para igualar")
+        s.ultima_acc_b = ""
 
-    elif a == AccionJugador.IGUALAR:
-        if to_call <= 0:
-            # ya está igualado => se considera pasar
-            s.jugador.ultima_accion = "pasar"
-            s.mesa.jugador_actuo_en_calle = True
+    elif accion == "igualar":
+        tc = s.to_call_j()
+        if tc <= 0:
+            # ya igualado → pasar
+            pass
         else:
-            pago = min(to_call, s.jugador.fichas)
-            if pago != to_call:
-                raise HTTPException(status_code=400, detail="Fichas insuficientes para igualar")
-            s.jugador.pagar(pago)
-            s.mesa.bets[idx_j] += pago
-            s.mesa.meter_al_bote(pago)
-            s.jugador.ultima_accion = "igualar"
-            s.mesa.jugador_actuo_en_calle = True
+            if s.fichas_j < tc:
+                raise HTTPException(400, f"Fichas insuficientes. Necesitas ${tc:,}")
+            s._pagar_j(tc)
 
-    elif a == AccionJugador.SUBIR:
-        # cantidad = APORTE TOTAL del jugador en esta acción (incluye igualar + raise)
-        # regla mínima: si hay apuesta, al menos to_call + big_blind; si no hay, al menos big_blind
-        min_raise_total = (to_call + s.mesa.big_blind) if to_call > 0 else s.mesa.big_blind
-        if cantidad < min_raise_total:
-            raise HTTPException(status_code=400, detail=f"Subida mínima: {min_raise_total}")
-        if cantidad > s.jugador.fichas:
-            raise HTTPException(status_code=400, detail="Fichas insuficientes para esa subida")
+    elif accion == "subir":
+        tc      = s.to_call_j()
+        min_sub = tc + s.big_blind
+        if cantidad < min_sub:
+            raise HTTPException(400, f"Subida mínima: ${min_sub:,}")
+        if cantidad > s.fichas_j:
+            raise HTTPException(400, f"Fichas insuficientes. Tienes ${s.fichas_j:,}")
+        s._pagar_j(cantidad)
 
-        s.jugador.pagar(cantidad)
-        s.mesa.bets[idx_j] += cantidad
-        # el current_bet es lo máximo apostado en la calle (por cualquiera)
-        s.mesa.current_bet = max(s.mesa.current_bet, s.mesa.bets[idx_j])
-        s.mesa.meter_al_bote(cantidad)
-        s.jugador.ultima_accion = "subir"
-        s.mesa.jugador_actuo_en_calle = True
+    else:
+        raise HTTPException(400, f"Acción desconocida: {accion}")
 
-    # ---- acción banca (1 por calle) ----
-    accion_banca, cantidad_banca = _accion_banca(s)
+    s.actuo_j = True
 
-    # ---- si ambos actuaron, y están igualados => avanzar ----
-    if s.mesa.jugador_actuo_en_calle and s.mesa.banca_actuo_en_calle:
-        if s.mesa.bets[0] == s.mesa.bets[1]:
-            _avanzar_calle(s)
+    # ── Acción de la banca ─────────────────────────────────────────
+    s._banca_actua()
 
-    # showdown?
-    if s.mesa.ronda_actual == EstadoPartida.SHOWDOWN:
+    # ── ¿Avanzar ronda? ───────────────────────────────────────────
+    # Ambos actuaron; igualamos apuestas si fuera necesario después de subidas
+    # Si la banca subió y el jugador no igualó esa subida, el jugador puede volver a actuar
+    # (Simplificado: 1 acción por calle, siempre avanzamos si los dos actuaron)
+    if s.actuo_j and s.actuo_b:
+        if s.ronda == "river":
+            # Ir a showdown
+            s._reset_calle()
+            s.ronda = "showdown"
+            return _resolver_showdown(s, db, user)
+
+        s._avanzar_ronda()
+
+    if s.ronda == "showdown":
         return _resolver_showdown(s, db, user)
 
-    return {
-        "fichas_jugador": s.jugador.fichas,
-        "fichas_banca": s.banca.fichas,
-        "bote": s.mesa.bote,
-        "apuesta_minima": s.mesa.to_call(0),
-        "ronda_actual": s.mesa.ronda_actual.value,
-        "cartas_comunitarias": [carta_a_dict(c) for c in s.mesa.cartas_comunitarias],
-        "accion_banca": f"{accion_banca} ({cantidad_banca})" if accion_banca in ["igualar", "subir"] else accion_banca,
-        "estado": s.mesa.ronda_actual.value,
-    }
-
-
-@router.post("/juegos/poker/{session_id}/rendirse")
-def rendirse(
-    session_id: str,
-    db: Session = Depends(get_db),
-    current_user: usuario.Usuario = Depends(get_current_user),
-):
-    limpiar_sesiones_expiradas()
-    s = obtener_sesion_poker(session_id, current_user.id)
-
-    user = db.query(usuario.Usuario).filter(usuario.Usuario.id == current_user.id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-
-    total_apostado = s.jugador.total_apostado()
-
-    if total_apostado == 0:
-        devolucion = s.apuesta_inicial
-        ganancia = 0
-    else:
-        devolucion = total_apostado // 2
-        ganancia = devolucion - total_apostado
-
-    user.saldo += Decimal(devolucion)
-    db.commit()
-    db.refresh(user)
-
-    del game_sessions[session_id]
-
-    return {
-        "resultado": (
-            f"Te rendiste. Recuperaste ${devolucion} de ${total_apostado} apostados."
-            if total_apostado > 0
-            else "Te rendiste antes de apostar. Recuperaste tu buy-in completo."
-        ),
-        "devolucion": devolucion,
-        "ganancia": ganancia,
-        "nuevo_saldo": user.saldo,
-        "estado": "terminada",
-    }
+    resp = _estado_base(s)
+    return resp
 
 
 @router.get("/juegos/poker/{session_id}/estado")
-def obtener_estado(
+def estado_poker(
+    session_id: str,
+    current_user: usuario.Usuario = Depends(get_current_user),
+):
+    _limpiar_expiradas()
+    s = _get_sesion(session_id, current_user.id)
+    resp = _estado_base(s)
+    resp["session_id"]   = session_id
+    resp["cartas_jugador"] = [_c(c) for c in s.cartas_j]
+    return resp
+
+
+@router.post("/juegos/poker/{session_id}/rendirse")
+def rendirse_poker(
     session_id: str,
     db: Session = Depends(get_db),
     current_user: usuario.Usuario = Depends(get_current_user),
 ):
-    limpiar_sesiones_expiradas()
-    s = obtener_sesion_poker(session_id, current_user.id)
+    _limpiar_expiradas()
+    s    = _get_sesion(session_id, current_user.id)
+    user = db.query(usuario.Usuario).filter(usuario.Usuario.id == current_user.id).first()
+    if not user:
+        raise HTTPException(404, "Usuario no encontrado")
+
+    # Devolvemos la mitad del buy-in como consolación
+    devolucion = s.apuesta_ini // 2
+    user.saldo += Decimal(devolucion)
+    db.commit()
+    db.refresh(user)
+    del game_sessions[session_id]
 
     return {
-        "session_id": session_id,
-        "cartas_jugador": [carta_a_dict(c) for c in s.jugador.cartas],
-        "fichas_jugador": s.jugador.fichas,
-        "fichas_banca": s.banca.fichas,
-        "bote": s.mesa.bote,
-        "apuesta_minima": s.mesa.to_call(0),
-        "ronda_actual": s.mesa.ronda_actual.value,
-        "cartas_comunitarias": [carta_a_dict(c) for c in s.mesa.cartas_comunitarias],
-        "estado": s.mesa.ronda_actual.value if s.estado != "terminada" else "terminada",
-        "ultima_accion_jugador": s.jugador.ultima_accion,
-        "ultima_accion_banca": s.banca.ultima_accion,
+        "resultado":   f"Te rendiste. Recuperas ${devolucion:,} (mitad de tu buy-in).",
+        "devolucion":  devolucion,
+        "ganancia":    devolucion - s.apuesta_ini,
+        "nuevo_saldo": float(user.saldo),
+        "estado":      "terminada",
     }
